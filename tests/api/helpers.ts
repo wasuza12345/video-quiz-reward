@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
 import { ADMIN_COOKIE_NAME } from "@/backend/common/auth/admin-session";
+import { ADMIN_DEVICE_COOKIE_NAME } from "@/backend/common/auth/admin-device-cookie";
 import { issueUserCookieValue, USER_COOKIE_NAME } from "@/backend/common/auth/user-cookie";
 import { hashPassword } from "@/backend/lib/password";
 import { prisma } from "@/backend/lib/prisma";
@@ -73,17 +74,22 @@ interface AdminRequestInit {
    * pass `null` to omit the header entirely (also invalid — origin-check treats missing as bad). */
   origin?: string | null;
   adminCookie?: string;
+  /** The `vq_admin_dev` "known device" cookie value (see admin-device-cookie.ts). */
+  deviceCookie?: string;
   ip?: string;
 }
 
 /** A NextRequest for `/api/admin/**`, with `Host`/`Origin` wired for `checkOrigin` and, optionally,
- * a `vq_admin` cookie for `requireAdmin` — everything the admin-auth layer reads from a real request. */
+ * `vq_admin`/`vq_admin_dev` cookies — everything the admin-auth layer reads from a real request. */
 export function adminRequest(url: string, init: AdminRequestInit = {}): NextRequest {
   const u = new URL(url);
   const headers = new Headers();
   headers.set("host", u.host);
   if (init.origin !== null) headers.set("origin", init.origin ?? u.origin);
-  if (init.adminCookie) headers.set("cookie", `${ADMIN_COOKIE_NAME}=${init.adminCookie}`);
+  const cookiePairs: string[] = [];
+  if (init.adminCookie) cookiePairs.push(`${ADMIN_COOKIE_NAME}=${init.adminCookie}`);
+  if (init.deviceCookie) cookiePairs.push(`${ADMIN_DEVICE_COOKIE_NAME}=${init.deviceCookie}`);
+  if (cookiePairs.length > 0) headers.set("cookie", cookiePairs.join("; "));
   if (init.ip) headers.set("x-real-ip", init.ip);
   if (init.body !== undefined) headers.set("content-type", "application/json");
   return new NextRequest(url, {

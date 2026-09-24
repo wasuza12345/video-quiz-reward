@@ -7,6 +7,7 @@ import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/backend/common/auth/admi
 import { issueUserCookieValue, USER_COOKIE_MAX_AGE_SECONDS, USER_COOKIE_NAME, verifyUserCookieValue } from "@/backend/common/auth/user-cookie";
 
 const ADMIN_LOGIN_PATHS = new Set(["/admin/login", "/api/admin/auth/login"]);
+const ADMIN_LOGOUT_PATH = "/api/admin/auth/logout";
 
 function isGuardedAdminPath(pathname: string): boolean {
   return (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) && !ADMIN_LOGIN_PATHS.has(pathname);
@@ -22,7 +23,12 @@ async function adminGuard(request: NextRequest): Promise<NextResponse | null> {
   if (await verifyAdminCookie(request.cookies.get(ADMIN_COOKIE_NAME)?.value)) return null;
 
   if (request.nextUrl.pathname.startsWith("/api/admin")) {
-    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "admin session missing or invalid" } }, { status: 401 });
+    const response = NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "admin session missing or invalid" } }, { status: 401 });
+    // A garbage/expired vq_admin cookie never even reaches the logout controller (this guard
+    // rejects it first) — clear it here too so a logout call always leaves the browser with no
+    // cookie, not just the case where the JWT was validly signed but DB-revoked (review MINOR 4).
+    if (request.nextUrl.pathname === ADMIN_LOGOUT_PATH) response.cookies.delete({ name: ADMIN_COOKIE_NAME, path: "/" });
+    return response;
   }
   return NextResponse.redirect(new URL("/admin/login", request.url));
 }

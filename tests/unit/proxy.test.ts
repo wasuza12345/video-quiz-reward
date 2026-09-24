@@ -59,4 +59,16 @@ describe("proxy — admin guard (plan §7)", () => {
     expect(res.status).not.toBe(401);
     expect(res.headers.get("location")).toBeNull();
   });
+
+  it("/api/admin/auth/logout with a garbage cookie → 401, and clears vq_admin (review MINOR 4: this never reaches the controller)", async () => {
+    const res = await proxy(req("/api/admin/auth/logout", "vq_admin=not-a-jwt"));
+    expect(res.status).toBe(401);
+    expect(res.cookies.get("vq_admin")?.value).toBe("");
+  });
+
+  it("a rejected /api/admin/videos request does NOT clear the cookie (only logout does)", async () => {
+    const res = await proxy(req("/api/admin/videos", "vq_admin=not-a-jwt"));
+    expect(res.status).toBe(401);
+    expect(res.cookies.get("vq_admin")).toBeUndefined();
+  });
 });

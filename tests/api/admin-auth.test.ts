@@ -3,8 +3,17 @@ import { GET as getMe } from "@/app/api/admin/auth/me/route";
 import { POST as postLogin } from "@/app/api/admin/auth/login/route";
 import { POST as postLogout } from "@/app/api/admin/auth/logout/route";
 import { ADMIN_COOKIE_NAME } from "@/backend/common/auth/admin-session";
+import { ADMIN_DEVICE_COOKIE_NAME } from "@/backend/common/auth/admin-device-cookie";
+import { emailThrottleKey } from "@/backend/common/auth/login-throttle";
 import { prisma } from "@/backend/lib/prisma";
 import { adminRequest, createTestAdmin } from "./helpers";
+
+/** Seeds the email-wide throttle counter directly at the cap, instead of driving 50 real failed
+ * logins through bcrypt (login-throttle.test.ts already proves the counter itself reaches this
+ * state correctly and cheaply) — this test is only about what happens once it's there. */
+async function primeEmailCapAtLimit(email: string) {
+  await prisma.loginThrottle.create({ data: { key: emailThrottleKey(email), failCount: 50, windowStart: new Date() } });
+}
 
 const LOGIN_URL = "http://t/api/admin/auth/login";
 const LOGOUT_URL = "http://t/api/admin/auth/logout";
@@ -21,6 +30,15 @@ describe("POST /api/admin/auth/login", () => {
     const cookie = res.cookies.get(ADMIN_COOKIE_NAME);
     expect(cookie?.value).toBeTruthy();
     expect(cookie?.httpOnly).toBe(true);
+  });
+
+  it("a successful login also sets a vq_admin_dev 'known device' cookie", async () => {
+    const admin = await createTestAdmin();
+    const res = await postLogin(adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password } }));
+    const device = res.cookies.get(ADMIN_DEVICE_COOKIE_NAME);
+    expect(device?.value).toBeTruthy();
+    expect(device?.httpOnly).toBe(true);
+    expect(device?.maxAge).toBe(60 * 60 * 24 * 90);
   });
 
   it("wrong password → 401 INVALID_CREDENTIALS", async () => {
@@ -75,6 +93,48 @@ describe("POST /api/admin/auth/login", () => {
     );
     expect(otherIp.status).toBe(200);
   });
+
+  it("review MAJOR: a known-device cookie skips the email-wide 50/hour cap", async () => {
+    const admin = await createTestAdmin();
+    const first = await postLogin(adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password }, ip: "50.50.50.1" }));
+    const deviceCookie = first.cookies.get(ADMIN_DEVICE_COOKIE_NAME)!.value;
+
+    // Simulates an attacker having already tripped the email-wide cap from many other ips —
+    // login-throttle.test.ts proves 50 real failures actually reach this state; this test is
+    // about what happens once it's there, so it seeds it directly rather than paying for 50 more
+    // bcrypt compares here too.
+    await primeEmailCapAtLimit(admin.email);
+
+    const withDevice = await postLogin(
+      adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password }, ip: "50.50.50.2", deviceCookie }),
+    );
+    expect(withDevice.status).toBe(200);
+  });
+
+  it("review MAJOR: without a device cookie, the same correct credentials hit the tripped email cap", async () => {
+    // A separate admin from the test above — a successful login clears the throttle rows, so
+    // sharing one admin across both assertions would let the first (device-cookie) success reset
+    // the cap this test needs to still be tripped.
+    const admin = await createTestAdmin();
+    await primeEmailCapAtLimit(admin.email);
+
+    const withoutDevice = await postLogin(adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password }, ip: "50.50.50.3" }));
+    expect(withoutDevice.status).toBe(429);
+    expect((await withoutDevice.json()).error.code).toBe("TOO_MANY_ATTEMPTS");
+  });
+
+  it("a device cookie issued for a DIFFERENT admin does not skip this admin's cap", async () => {
+    const admin = await createTestAdmin();
+    const otherAdmin = await createTestAdmin();
+    const otherLogin = await postLogin(adminRequest(LOGIN_URL, { body: { email: otherAdmin.email, password: otherAdmin.password }, ip: "70.0.0.1" }));
+    const otherDeviceCookie = otherLogin.cookies.get(ADMIN_DEVICE_COOKIE_NAME)!.value;
+
+    await primeEmailCapAtLimit(admin.email);
+    const res = await postLogin(
+      adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password }, ip: "71.0.0.99", deviceCookie: otherDeviceCookie }),
+    );
+    expect(res.status).toBe(429);
+  });
 });
 
 describe("admin session: GET /me, POST /logout, tokenVersion revoke (plan §7)", () => {
@@ -101,13 +161,20 @@ describe("admin session: GET /me, POST /logout, tokenVersion revoke (plan §7)",
     expect(await res.json()).toEqual({ id: admin.id, email: admin.email });
   });
 
-  it("logout without a matching origin → 403 BAD_ORIGIN (never gets to revoke)", async () => {
+  it("logout without a matching origin → 403 BAD_ORIGIN (never gets to revoke), but the cookie is still cleared (review MINOR 4)", async () => {
     const admin = await createTestAdmin();
     const login = await postLogin(adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password } }));
     const cookie = login.cookies.get(ADMIN_COOKIE_NAME)!.value;
 
     const res = await postLogout(adminRequest(LOGOUT_URL, { adminCookie: cookie, origin: null }));
     expect(res.status).toBe(403);
+    expect(res.cookies.get(ADMIN_COOKIE_NAME)?.value).toBe("");
+  });
+
+  it("logout with no session at all (already logged out / expired) → 401, cookie still cleared (review MINOR 4)", async () => {
+    const res = await postLogout(adminRequest(LOGOUT_URL, { adminCookie: "not-a-real-jwt" }));
+    expect(res.status).toBe(401);
+    expect(res.cookies.get(ADMIN_COOKIE_NAME)?.value).toBe("");
   });
 
   it("logout bumps tokenVersion so the old (still unexpired, correctly signed) JWT stops working", async () => {
