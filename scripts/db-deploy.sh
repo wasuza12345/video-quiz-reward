@@ -3,14 +3,16 @@
 #   Default                        → local file DB (DATABASE_URL=file:…) via `prisma migrate deploy`.
 #   TURSO_DATABASE_URL + ALLOW_TURSO=1 (or VERCEL=1) → Turso (prod). Prisma 7 CLI cannot migrate libsql://,
 #                                    so scripts/db-deploy-libsql.mjs applies each pending migration.sql.
-# Usage: scripts/db-deploy.sh [env-file]      e.g. ALLOW_TURSO=1 scripts/db-deploy.sh .env.local
+# Usage: scripts/db-deploy.sh [env-file]      (default: .env)   e.g. ALLOW_TURSO=1 scripts/db-deploy.sh .env.local
 # Never echoes URL or token values.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [[ $# -ge 1 ]]; then
-  [[ -f "$1" ]] || { echo "env file not found: $1" >&2; exit 1; }
-  set -a; source "$1"; set +a
+env_file="${1:-.env}"
+if [[ -f "$env_file" ]]; then
+  set -a; source "$env_file"; set +a
+elif [[ $# -ge 1 ]]; then
+  echo "env file not found: $env_file" >&2; exit 1
 fi
 
 # Same selector as src/backend/config/env.ts.
