@@ -37,8 +37,21 @@ export default defineConfig({
     stderr: "pipe",
   },
   projects: [
-    { name: "api", testIgnore: /.*\.browser\.spec\.ts/ },
-    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /.*\.browser\.spec\.ts/ },
-    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: /.*\.browser\.spec\.ts/ },
+    { name: "api", testIgnore: ["**/*.browser.spec.ts", "browser/**"] },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testMatch: "proxy-secure-cookie.browser.spec.ts" },
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: "proxy-secure-cookie.browser.spec.ts" },
+    // P6b — real-browser UI specs (plan §10 full list). desktop-only/ (the honest real-iframe
+    // flow + the admin CRUD/timeline flow) only makes sense once, so only "ui-desktop" picks it
+    // up; both-viewports/ (refresh, quiz Esc, the seekTo cheat) is cheap enough to run twice.
+    {
+      name: "ui-desktop",
+      testDir: "./tests/e2e/browser",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, launchOptions: { args: ["--autoplay-policy=no-user-gesture-required"] } },
+    },
+    {
+      name: "ui-mobile",
+      testDir: "./tests/e2e/browser/both-viewports",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 }, launchOptions: { args: ["--autoplay-policy=no-user-gesture-required"] } },
+    },
   ],
 });

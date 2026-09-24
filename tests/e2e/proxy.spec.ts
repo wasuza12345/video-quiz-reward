@@ -103,23 +103,20 @@ test("5. matcher: /watch/* and /api/* get the cookie; /_next/static/* does not",
   }
 });
 
-test.fail(
-  "7. /admin/* is guarded (401/redirect) once P5a lands — currently a deliberate no-op stub",
-  async ({ request }) => {
-    // src/proxy.ts:19 adminGuardStub() is a documented no-op until P5a (and no admin routes
-    // exist yet at this commit either). This test encodes the TARGET behavior and is expected to
-    // fail today; `test.fail` still RUNS it, so once P5a lands and it starts passing, Playwright
-    // flags the unexpected pass — flip it to a plain `test` at that point.
-    const anon = await playwrightRequest.newContext({ baseURL: BASE_URL });
-    try {
-      const user = new UserSession(anon);
-      const page = await user.get("/admin");
-      expect(page.status(), "unauthenticated /admin should redirect or be blocked").not.toBe(200);
+test("7. /admin/* is guarded: unauthenticated page requests redirect to login, API requests get 401", async () => {
+  // src/proxy.ts's adminGuard() landed with P5a — this was a test.fail trip-wire before that.
+  const anon = await playwrightRequest.newContext({ baseURL: BASE_URL });
+  try {
+    const user = new UserSession(anon);
+    // APIRequestContext follows redirects by default, so assert on the final URL rather than
+    // the (by-then-200) status of the page it landed on.
+    const page = await user.get("/admin");
+    expect(page.url(), "unauthenticated /admin must redirect to the login page").toContain("/admin/login");
 
-      const api = await user.get("/api/admin/stats");
-      expect(api.status(), "unauthenticated /api/admin/* should be 401").toBe(401);
-    } finally {
-      await anon.dispose();
-    }
-  },
-);
+    const api = await user.get("/api/admin/stats");
+    expect(api.status(), "unauthenticated /api/admin/* should be 401").toBe(401);
+    expect((await api.json()).error.code).toBe("UNAUTHENTICATED");
+  } finally {
+    await anon.dispose();
+  }
+});
