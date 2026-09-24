@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PublicHeader } from "../components/PublicHeader";
 import { PointsBadge } from "../components/PointsBadge";
@@ -45,6 +45,11 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   const playedWallSecRef = useRef(0);
   const claimAttemptedRef = useRef<string | null>(null);
+  // Guards the initial mount's /api/me + /api/sessions calls against StrictMode's dev-only
+  // double-invoke of effects (review MINOR 2) — keyed on videoId (not just a boolean) so a
+  // genuine videoId change still loads. handleReplay/handleRetry call loadSession() directly
+  // from a user gesture and are unaffected.
+  const initialLoadVideoIdRef = useRef<string | null>(null);
 
   // --- initial data: /api/me + create/resume the session ---
   const loadSession = useCallback(() => {
@@ -55,12 +60,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
   }, [videoId]);
 
   useEffect(() => {
+    if (initialLoadVideoIdRef.current === videoId) return;
+    initialLoadVideoIdRef.current = videoId;
     api
       .getMe()
       .then((me) => dispatch({ type: "ME_LOADED", me }))
       .catch(() => dispatch({ type: "ME_FAILED" }));
     loadSession();
-  }, [loadSession]);
+  }, [loadSession, videoId]);
 
   // --- "taking a while" notice ---
   useEffect(() => {
@@ -85,15 +92,37 @@ export function WatchPage({ videoId }: WatchPageProps) {
     return () => clearInterval(t);
   }, [state.status]);
 
+  const trackerApi = useWatchTracker({
+    player,
+    active: state.status === "playing",
+    sessionId: state.sessionId,
+    furthestSec: state.furthestSec,
+    pendingSeekTo: state.pendingSeekTo,
+    quizzes: state.quizzes,
+    passedQuestionIds: state.passedQuestionIds,
+    writer,
+    dispatch,
+  });
+
+  // True from the moment the auto-resume-after-correct-answer timer fires until the player
+  // actually confirms PLAYING — the ControlBar toggle is disabled for this window so a click
+  // can't race the auto-resume's own seek/play and produce a spurious backward jump (MINOR 3).
+  const [autoResuming, setAutoResuming] = useState(false);
+
   // --- player state changes drive both the reducer and the server write (plan §6) ---
   useEffect(() => {
     handleStateChangeRef.current = (ytState: number) => {
       if (!player) return;
       const currentTime = player.getCurrentTime();
       if (ytState === YT_PLAYER_STATE.PLAYING) {
+        setAutoResuming(false);
         dispatch({ type: "PLAY_CLICKED" });
         void writer.sendImmediate("PLAY", currentTime);
       } else if (ytState === YT_PLAYER_STATE.PAUSED) {
+        setAutoResuming(false);
+        // The gate-hit flow (useWatchTracker) already calls player.pauseVideo() and sends its
+        // own PAUSE — skip the duplicate this onStateChange(PAUSED) would otherwise send (MINOR 4).
+        if (trackerApi.isGateInFlight()) return;
         dispatch({ type: "PAUSE_CLICKED" });
         void writer.sendImmediate("PAUSE", currentTime);
       } else if (ytState === YT_PLAYER_STATE.ENDED) {
@@ -112,18 +141,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
     };
   });
 
-  useWatchTracker({
-    player,
-    active: state.status === "playing",
-    sessionId: state.sessionId,
-    furthestSec: state.furthestSec,
-    pendingSeekTo: state.pendingSeekTo,
-    quizzes: state.quizzes,
-    passedQuestionIds: state.passedQuestionIds,
-    writer,
-    dispatch,
-  });
-
   // --- apply a reducer-requested seek, then resume playback if we're meant to be playing (and
   // aren't already — avoids a redundant playVideo() call while one is already in progress) ---
   useEffect(() => {
@@ -138,6 +155,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
     if (state.status !== "quiz_open" || state.feedback?.tone !== "correct") return;
     const t = setTimeout(() => {
       dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT" });
+      setAutoResuming(true);
       player?.playVideo();
     }, 900);
     return () => clearTimeout(t);
@@ -186,10 +204,10 @@ export function WatchPage({ videoId }: WatchPageProps) {
   }, [player, writer]);
 
   const handleToggle = useCallback(() => {
-    if (!player || !selectPlayButtonEnabled(state)) return;
+    if (!player || !selectPlayButtonEnabled(state) || autoResuming) return;
     if (state.status === "playing") player.pauseVideo();
     else player.playVideo();
-  }, [player, state]);
+  }, [player, state, autoResuming]);
 
   const handleChoice = useCallback(
     (choice: string) => {
@@ -270,7 +288,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
           <>
             <ControlBar
               isPlaying={isPlaying}
-              enabled={selectPlayButtonEnabled(state) && playerReady}
+              enabled={selectPlayButtonEnabled(state) && playerReady && !autoResuming}
               onToggle={handleToggle}
               positionSec={state.positionSec}
               furthestSec={state.furthestSec}

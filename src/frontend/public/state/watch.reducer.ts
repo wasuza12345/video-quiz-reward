@@ -164,6 +164,10 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
         claimError: false,
         inlineNotice: null,
         error: null,
+        // A resumed/reloaded session starts the player at 0 unless we explicitly seek it — the
+        // player only picks this up once it's ready (WatchPage's pendingSeekTo effect guards on
+        // `player` being non-null, so it naturally waits and fires once, review MAJOR).
+        pendingSeekTo: s.positionSec > 0 ? s.positionSec : null,
       };
     }
 

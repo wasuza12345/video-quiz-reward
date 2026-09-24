@@ -42,6 +42,21 @@ describe("SESSION_LOADED — derives the starting status from server state (spec
     expect(s.showResumedBanner).toBe(true);
   });
 
+  it("review MAJOR: PAUSED with positionSec 6.9 → pendingSeekTo 6.9, so the player actually seeks to where the banner claims", () => {
+    const s = run([{ type: "SESSION_LOADED", session: session({ state: "PAUSED", positionSec: 6.9, furthestSec: 6.9 }) }]);
+    expect(s.pendingSeekTo).toBe(6.9);
+  });
+
+  it("review MAJOR: a brand new session (positionSec 0) sets no pending seek", () => {
+    const s = run([{ type: "SESSION_LOADED", session: session() }]);
+    expect(s.pendingSeekTo).toBeNull();
+  });
+
+  it("review MAJOR: a resumed QUIZ_PENDING session also seeks to its (nonzero) position, not just PAUSED", () => {
+    const s = run([{ type: "SESSION_LOADED", session: session({ state: "QUIZ_PENDING", currentQuestionId: "q1", positionSec: 13, furthestSec: 13 }) }]);
+    expect(s.pendingSeekTo).toBe(13);
+  });
+
   it("row 4: QUIZ_PENDING → quiz_open, ready phase (no syncing step)", () => {
     const s = run([{ type: "SESSION_LOADED", session: session({ state: "QUIZ_PENDING", currentQuestionId: "q1", positionSec: 13, furthestSec: 13 }) }]);
     expect(s.status).toBe("quiz_open");

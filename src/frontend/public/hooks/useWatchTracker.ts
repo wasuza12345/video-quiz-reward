@@ -29,6 +29,13 @@ export interface UseWatchTrackerOptions {
  * flushed every 5s) via a `WatchTracker`. Positions are sent unrounded, straight from
  * `player.getCurrentTime()`.
  */
+export interface WatchTrackerApi {
+  /** True while a gate-hit PAUSE write is in flight — WatchPage's onStateChange(PAUSED) handler
+   * uses this to skip the duplicate PAUSE the tracker's own player.pauseVideo() call triggers
+   * (review MINOR 4). */
+  isGateInFlight: () => boolean;
+}
+
 export function useWatchTracker({
   player,
   active,
@@ -39,7 +46,7 @@ export function useWatchTracker({
   passedQuestionIds,
   writer,
   dispatch,
-}: UseWatchTrackerOptions): void {
+}: UseWatchTrackerOptions): WatchTrackerApi {
   const tracker = useMemo(
     () => new WatchTracker(furthestSec),
     // initialFurthestSec is intentionally read only at creation time (it advances on every
@@ -117,4 +124,6 @@ export function useWatchTracker({
     }, 5000);
     return () => clearInterval(interval);
   }, [player, active, writer, dispatch]);
+
+  return useMemo(() => ({ isGateInFlight: () => gateInFlight.current }), []);
 }
