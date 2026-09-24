@@ -13,12 +13,12 @@ import { SessionStateBadge } from "../components/SessionStateBadge";
 import { SessionTimeline } from "../components/SessionTimeline";
 import { common, formatTime, sessions as copy } from "../constants/copy.th";
 import { shortId } from "../lib/format";
+import { TOLERANCES } from "@/shared/constants/session";
 import type { AdminSessionDetail, AdminSessionEventRow } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
 
 const SOFT_REJECT_LIMIT = 3;
 const PLAYED_WALL_REQUIRED_RATIO = 0.9;
-const BANK_MAX_SEC = 6;
 
 function buildFlagReason(events: AdminSessionEventRow[]): string {
   const seekForwardCount = events.filter((e) => !e.accepted && e.rejectReason === "SEEK_FORWARD").length;
@@ -145,7 +145,7 @@ export function AdminSessionDetailPage({ sessionId }: { sessionId: string }) {
           }
           tone={session.questionCount > 0 && session.passedQuestionIds.length === session.questionCount ? "success" : undefined}
         />
-        <Fact label={copy.detail.facts.bankSec} value={`${session.bankSec}s / ${BANK_MAX_SEC}s`} />
+        <Fact label={copy.detail.facts.bankSec} value={`${session.bankSec}s / ${TOLERANCES.BANK_MAX_SEC}s`} />
         <Fact
           label={copy.detail.facts.softRejectCount}
           value={`${session.softRejectCount} / ${SOFT_REJECT_LIMIT}`}

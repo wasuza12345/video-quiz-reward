@@ -88,6 +88,11 @@ export const videoForm = {
   publishAction: "เผยแพร่",
   featureAction: "ตั้งเป็นคลิปแนะนำ",
   zeroQuestionsWarning: "คลิปนี้ยังไม่มีคำถาม ผู้ชมจะรับแต้มได้โดยไม่ต้องตอบคำถามค่ะ",
+  errors: {
+    invalidTrigger: (mmss: string) => `คำถามที่เวลา ${mmss} ไม่พอดีกับความยาวคลิปที่แก้ไขแล้ว กรุณาแก้ไขก่อนเผยแพร่ค่ะ`,
+    validation: "คำถามในคลิปนี้ยังไม่ถูกต้อง กรุณาตรวจสอบก่อนเผยแพร่ค่ะ",
+    generic: "ทำรายการไม่สำเร็จ กรุณาลองใหม่ค่ะ",
+  },
 };
 
 export const youtubePreview = {
@@ -110,11 +115,13 @@ export const quizEditor = {
   useCurrentTime: "ใช้เวลาปัจจุบัน",
   useCurrentTimeAnnounce: (mmss: string) => `ตั้งเวลาเป็น ${mmss} แล้วค่ะ`,
   useCurrentTimeDisabledPreview: "รอตัวอย่างโหลดก่อนค่ะ",
+  useCurrentTimeDisabledZero: "เล่นตัวอย่างก่อนถึงจะใช้เวลาปัจจุบันได้ค่ะ",
   goToTime: "ไปที่เวลานี้",
   triggerHelper: (maxMmss: string) => `ต้องมากกว่า 0:00 และน้อยกว่า ${maxMmss}`,
   promptLabel: "คำถาม",
   promptCounter: (n: number) => `${n}/300`,
   choicesLabel: "ตัวเลือก (2–4 ข้อ) — เลือกข้อที่ถูก",
+  choiceTextAriaLabel: (label: string) => `ข้อความตัวเลือก ${label}`,
   correctSr: "เฉลย",
   addChoice: "+ เพิ่มตัวเลือก",
   removeChoiceAriaLabel: "ลบตัวเลือกนี้",
@@ -129,7 +136,10 @@ export const quizEditor = {
     duplicateTrigger: "มีคำถามที่เวลานี้แล้ว เลือกเวลาอื่นค่ะ",
     emptyPrompt: "กรุณากรอกคำถาม",
     emptyChoiceText: "กรุณากรอกตัวเลือก",
+    duplicateChoiceLabels: "ตัวเลือกซ้ำกัน กรุณาลองใหม่ค่ะ",
     noCorrectChoice: "เลือกข้อที่ถูกต้อง 1 ข้อ",
+    locked: "คำถามนี้ถูกล็อกบางส่วนแล้ว เพราะมีผู้ชมเริ่มดูคลิปนี้ค่ะ",
+    generic: "บันทึกไม่สำเร็จ กรุณาลองใหม่ค่ะ",
   },
 };
 

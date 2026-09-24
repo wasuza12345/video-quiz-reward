@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/frontend/shared/ui/Button";
 import { ConfirmDialog } from "@/frontend/shared/ui/ConfirmDialog";
 import { EmptyState } from "@/frontend/shared/ui/ErrorState";
@@ -9,6 +10,25 @@ import { formatMmSsTenths, parseMmSsTenths } from "../lib/time";
 import type { YouTubePreviewHandle } from "./YouTubePreview";
 import { AdminApiError, adminApi } from "../services/api";
 import type { AdminQuestionDetail } from "@/shared/contracts/admin";
+
+/** Maps a question create/update failure to a field (when it should attach under an input) or a
+ * general banner message. UNAUTHENTICATED is handled by the caller (redirect, not a message) so
+ * this stays a pure function. Exported for tests/unit/frontend/quiz-editor-errors.test.ts. */
+export function mapQuestionSaveError(err: { code: string; extra: Record<string, unknown> }, durationSec: number): { field?: "triggerSec" | "prompt" | "choices" | "correctChoice"; message: string } {
+  if (err.code === "DUPLICATE_TRIGGER") return { field: "triggerSec", message: copy.errors.duplicateTrigger };
+  if (err.code === "INVALID_TRIGGER") return { field: "triggerSec", message: copy.errors.triggerRange(formatMmSsTenths(durationSec - 2)) };
+  if (err.code === "VALIDATION_ERROR") {
+    const issues = (err.extra.issues as { path: string; message: string }[] | undefined) ?? [];
+    const path = issues[0]?.path;
+    if (path === "correctChoice") return { field: "correctChoice", message: copy.errors.noCorrectChoice };
+    if (path === "prompt") return { field: "prompt", message: copy.errors.emptyPrompt };
+    if (path === "choices") return { field: "choices", message: copy.errors.duplicateChoiceLabels };
+    if (path?.startsWith("choices.")) return { field: "choices", message: copy.errors.emptyChoiceText };
+    return { message: copy.errors.noCorrectChoice };
+  }
+  if (err.code === "VIDEO_LOCKED") return { message: copy.errors.locked };
+  return { message: copy.errors.generic };
+}
 
 const CHOICE_LABELS = ["A", "B", "C", "D"] as const;
 type ChoiceLabel = (typeof CHOICE_LABELS)[number];
@@ -44,6 +64,7 @@ interface QuestionCardProps {
   locked: boolean;
   previewReady: boolean;
   previewHandle: YouTubePreviewHandle | null;
+  previewCurrentTime: number;
   existingTriggers: number[]; // sibling questions' triggerSec, for the client-side duplicate check
   defaultExpanded: boolean;
   onSaved: (question: AdminQuestionDetail, wasNew: boolean, tempKey: string) => void;
@@ -51,7 +72,11 @@ interface QuestionCardProps {
   tempKey: string;
 }
 
-function QuestionCard({ question, videoId, durationSec, locked, previewReady, previewHandle, existingTriggers, defaultExpanded, onSaved, onDeleted, tempKey }: QuestionCardProps) {
+// Exported for tests/unit/frontend/admin-form-a11y.test.tsx (review round 3 MINOR 5: label association).
+export function QuestionCard({ question, videoId, durationSec, locked, previewReady, previewHandle, previewCurrentTime, existingTriggers, defaultExpanded, onSaved, onDeleted, tempKey }: QuestionCardProps) {
+  const router = useRouter();
+  const triggerId = useId();
+  const promptId = useId();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [draft, setDraft] = useState<Draft>(question ? toDraft(question) : NEW_DRAFT);
   const [saving, setSaving] = useState(false);
@@ -65,6 +90,11 @@ function QuestionCard({ question, videoId, durationSec, locked, previewReady, pr
   const triggerSecParsed = parseMmSsTenths(draft.triggerSec);
 
   const setField = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
+
+  // "ใช้เวลาปัจจุบัน" needs actual playback progress to be meaningful — at t=0 it would just set
+  // every new question's trigger to 0:00.0 (review round 3 MINOR 6).
+  const currentTimeDisabled = locked || !previewReady || previewCurrentTime <= 0;
+  const currentTimeHint = !previewReady ? copy.useCurrentTimeDisabledPreview : previewCurrentTime <= 0 ? copy.useCurrentTimeDisabledZero : undefined;
 
   const useCurrentTime = () => {
     if (!previewHandle) return;
@@ -105,12 +135,15 @@ function QuestionCard({ question, videoId, durationSec, locked, previewReady, pr
       setExpanded(false);
     } catch (err) {
       if (err instanceof AdminApiError) {
-        if (err.code === "DUPLICATE_TRIGGER") setFieldErrors((f) => ({ ...f, triggerSec: copy.errors.duplicateTrigger }));
-        else if (err.code === "INVALID_TRIGGER") setFieldErrors((f) => ({ ...f, triggerSec: copy.errors.triggerRange(formatMmSsTenths(durationSec - 2)) }));
-        else if (err.code === "VALIDATION_ERROR") setError(copy.errors.noCorrectChoice);
-        else setError(err.message);
+        if (err.code === "UNAUTHENTICATED") {
+          router.push("/admin/login?reason=expired");
+          return;
+        }
+        const mapped = mapQuestionSaveError(err, durationSec);
+        if (mapped.field) setFieldErrors((f) => ({ ...f, [mapped.field!]: mapped.message }));
+        else setError(mapped.message);
       } else {
-        setError(String(err));
+        setError(copy.errors.generic);
       }
     } finally {
       setSaving(false);
@@ -167,16 +200,17 @@ function QuestionCard({ question, videoId, durationSec, locked, previewReady, pr
             {announcement}
           </p>
 
-          <label style={{ display: "block", fontSize: "var(--fs-sm)", fontWeight: 600, marginBottom: 6 }}>{copy.triggerLabel}</label>
+          <label htmlFor={triggerId} style={{ display: "block", fontSize: "var(--fs-sm)", fontWeight: 600, marginBottom: 6 }}>{copy.triggerLabel}</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
             <input
+              id={triggerId}
               value={draft.triggerSec}
               onChange={(e) => setField({ triggerSec: e.target.value })}
               readOnly={locked}
               aria-disabled={locked || undefined}
               style={{ width: 120, height: 48, borderRadius: "var(--radius-field)", border: `1px solid ${fieldErrors.triggerSec ? "var(--danger)" : "var(--border-control)"}`, padding: "0 12px", fontFamily: "var(--font)" }}
             />
-            <Button variant="outline" size="sm" onClick={useCurrentTime} disabled={locked || !previewReady} title={!previewReady ? copy.useCurrentTimeDisabledPreview : undefined}>
+            <Button variant="outline" size="sm" onClick={useCurrentTime} disabled={currentTimeDisabled} title={currentTimeHint}>
               {copy.useCurrentTime}
             </Button>
             <Button variant="outline" size="sm" onClick={goToTime} disabled={!previewReady || triggerSecParsed === null}>
@@ -187,8 +221,9 @@ function QuestionCard({ question, videoId, durationSec, locked, previewReady, pr
             {fieldErrors.triggerSec ?? copy.triggerHelper(formatMmSsTenths(durationSec - 2))}
           </p>
 
-          <label style={{ display: "block", fontSize: "var(--fs-sm)", fontWeight: 600, marginBottom: 6 }}>{copy.promptLabel}</label>
+          <label htmlFor={promptId} style={{ display: "block", fontSize: "var(--fs-sm)", fontWeight: 600, marginBottom: 6 }}>{copy.promptLabel}</label>
           <textarea
+            id={promptId}
             value={draft.prompt}
             onChange={(e) => setField({ prompt: e.target.value.slice(0, 300) })}
             maxLength={300}
@@ -212,10 +247,11 @@ function QuestionCard({ question, videoId, durationSec, locked, previewReady, pr
                   aria-label={`${copy.correctSr} ${choice.label}`}
                 />
               </label>
-              <span style={{ fontWeight: 700, width: 16 }}>{choice.label}</span>
+              <span style={{ fontWeight: 700, width: 16 }} aria-hidden="true">{choice.label}</span>
               <input
                 value={choice.text}
                 onChange={(e) => setField({ choices: draft.choices.map((c) => (c.label === choice.label ? { ...c, text: e.target.value } : c)) })}
+                aria-label={copy.choiceTextAriaLabel(choice.label)}
                 style={{ flex: 1, height: 44, borderRadius: "var(--radius-field)", border: "1px solid var(--border-control)", padding: "0 12px", fontFamily: "var(--font)" }}
               />
               {draft.choices.length > 2 && !locked && (
@@ -285,10 +321,11 @@ export interface QuizEditorProps {
   videoSaved: boolean;
   previewReady: boolean;
   previewHandle: YouTubePreviewHandle | null;
+  previewCurrentTime: number;
   onQuestionsChange: (questions: AdminQuestionDetail[]) => void;
 }
 
-export function QuizEditor({ videoId, questions, durationSec, locked, videoSaved, previewReady, previewHandle, onQuestionsChange }: QuizEditorProps) {
+export function QuizEditor({ videoId, questions, durationSec, locked, videoSaved, previewReady, previewHandle, previewCurrentTime, onQuestionsChange }: QuizEditorProps) {
   const [newDraftKeys, setNewDraftKeys] = useState<string[]>([]);
 
   const sorted = [...questions].sort((a, b) => a.triggerSec - b.triggerSec);
@@ -319,6 +356,7 @@ export function QuizEditor({ videoId, questions, durationSec, locked, videoSaved
           locked={locked}
           previewReady={previewReady}
           previewHandle={previewHandle}
+          previewCurrentTime={previewCurrentTime}
           existingTriggers={sorted.filter((s) => s.id !== q.id).map((s) => s.triggerSec)}
           defaultExpanded={false}
           onSaved={(saved) => onQuestionsChange(questions.map((existing) => (existing.id === saved.id ? saved : existing)))}
@@ -336,6 +374,7 @@ export function QuizEditor({ videoId, questions, durationSec, locked, videoSaved
           locked={locked}
           previewReady={previewReady}
           previewHandle={previewHandle}
+          previewCurrentTime={previewCurrentTime}
           existingTriggers={sorted.map((s) => s.triggerSec)}
           defaultExpanded
           onSaved={(saved, _wasNew, tempKey) => {

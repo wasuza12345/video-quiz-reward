@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { formatTime, videoForm as copy } from "../constants/copy.th";
 
 export interface VideoFormValues {
@@ -29,10 +30,10 @@ const fieldBaseStyle: React.CSSProperties = {
   fontFamily: "var(--font)",
 };
 
-function Field({ label, helper, error, children }: { label: string; helper?: string; error?: string; children: React.ReactNode }) {
+function Field({ id, label, helper, error, children }: { id: string; label: string; helper?: string; error?: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ display: "block", fontSize: "var(--fs-sm)", fontWeight: 600, marginBottom: 6 }}>{label}</label>
+      <label htmlFor={id} style={{ display: "block", fontSize: "var(--fs-sm)", fontWeight: 600, marginBottom: 6 }}>{label}</label>
       {children}
       {error ? (
         <p style={{ color: "var(--danger)", fontSize: "var(--fs-xs)", margin: "6px 0 0" }}>{error}</p>
@@ -45,11 +46,16 @@ function Field({ label, helper, error, children }: { label: string; helper?: str
 
 export function VideoForm({ mode, values, onChange, channelName, durationSec, locked, errors }: VideoFormProps) {
   const set = (patch: Partial<VideoFormValues>) => onChange({ ...values, ...patch });
+  const youtubeUrlId = useId();
+  const titleId = useId();
+  const durationSecId = useId();
+  const rewardPointsId = useId();
 
   return (
     <div style={{ background: "var(--surface)", borderRadius: "var(--radius-card)", padding: 20 }}>
-      <Field label={`${copy.fields.youtubeUrl.label}${locked ? " 🔒" : ""}`} helper={!errors.youtubeUrl ? copy.fields.youtubeUrl.helper : undefined} error={errors.youtubeUrl}>
+      <Field id={youtubeUrlId} label={`${copy.fields.youtubeUrl.label}${locked ? " 🔒" : ""}`} helper={!errors.youtubeUrl ? copy.fields.youtubeUrl.helper : undefined} error={errors.youtubeUrl}>
         <input
+          id={youtubeUrlId}
           value={values.youtubeUrl}
           onChange={(e) => set({ youtubeUrl: e.target.value })}
           readOnly={locked}
@@ -59,16 +65,17 @@ export function VideoForm({ mode, values, onChange, channelName, durationSec, lo
         />
       </Field>
 
-      <Field label={copy.fields.title.label} helper={mode === "create" ? copy.fields.title.helperCreate : undefined}>
-        <input value={values.title} onChange={(e) => set({ title: e.target.value })} style={fieldBaseStyle} />
+      <Field id={titleId} label={copy.fields.title.label} helper={mode === "create" ? copy.fields.title.helperCreate : undefined}>
+        <input id={titleId} value={values.title} onChange={(e) => set({ title: e.target.value })} style={fieldBaseStyle} />
       </Field>
 
       {channelName && (
         <p style={{ fontSize: "var(--fs-sm)", color: "var(--text-2)", margin: "-8px 0 16px" }}>{copy.fields.channelName(channelName)}</p>
       )}
 
-      <Field label={`${copy.fields.durationSec.label}${locked ? " 🔒" : ""}`} helper={!errors.durationSec ? copy.fields.durationSec.helper : undefined} error={errors.durationSec}>
+      <Field id={durationSecId} label={`${copy.fields.durationSec.label}${locked ? " 🔒" : ""}`} helper={!errors.durationSec ? copy.fields.durationSec.helper : undefined} error={errors.durationSec}>
         <input
+          id={durationSecId}
           readOnly
           aria-disabled={locked || undefined}
           value={durationSec !== null ? formatTime(durationSec) : ""}
@@ -76,8 +83,9 @@ export function VideoForm({ mode, values, onChange, channelName, durationSec, lo
         />
       </Field>
 
-      <Field label={copy.fields.rewardPoints.label} error={errors.rewardPoints}>
+      <Field id={rewardPointsId} label={copy.fields.rewardPoints.label} error={errors.rewardPoints}>
         <input
+          id={rewardPointsId}
           type="number"
           min={1}
           max={1000}

@@ -17,10 +17,13 @@ export interface YouTubePreviewProps {
   youtubeId: string | null;
   onReady?: (handle: YouTubePreviewHandle) => void;
   onDuration?: (durationSec: number) => void;
+  /** Fired on the same 200ms poll as the live readout — lets a caller (the quiz editor's "ใช้
+   * เวลาปัจจุบัน" button) know once playback has actually advanced past 0. */
+  onTimeUpdate?: (currentTime: number) => void;
 }
 
 /** admin/components/YouTubePreview (spec §5.4): normal controls, live readout, empty/loading/ready/error states. */
-export function YouTubePreview({ youtubeId, onReady, onDuration }: YouTubePreviewProps) {
+export function YouTubePreview({ youtubeId, onReady, onDuration, onTimeUpdate }: YouTubePreviewProps) {
   const { containerRef, player, ready, error } = useAdminYouTubePreview(youtubeId);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -44,7 +47,9 @@ export function YouTubePreview({ youtubeId, onReady, onDuration }: YouTubePrevie
     if (!ready || !player) return;
     reportedDuration.current = false;
     const id = window.setInterval(() => {
-      setCurrentTime(player.getCurrentTime());
+      const t = player.getCurrentTime();
+      setCurrentTime(t);
+      onTimeUpdate?.(t);
       const d = player.getDuration();
       if (d > 0) {
         setDuration(d);
@@ -55,7 +60,7 @@ export function YouTubePreview({ youtubeId, onReady, onDuration }: YouTubePrevie
       }
     }, 200);
     return () => window.clearInterval(id);
-  }, [ready, player, onDuration]);
+  }, [ready, player, onDuration, onTimeUpdate]);
 
   if (!youtubeId) {
     return (

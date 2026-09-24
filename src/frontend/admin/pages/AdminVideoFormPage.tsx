@@ -16,10 +16,26 @@ import { QuizEditor } from "../components/QuizEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { VideoForm, type VideoFormValues } from "../components/VideoForm";
 import { YouTubePreview, type YouTubePreviewHandle } from "../components/YouTubePreview";
-import { videoForm as copy } from "../constants/copy.th";
+import { videoForm as copy, sessions as sessionsCopy } from "../constants/copy.th";
+import { formatMmSsTenths } from "../lib/time";
 import { parseYoutubeIdClient } from "../lib/youtube";
 import type { AdminQuestionDetail, AdminVideoDetail } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
+
+/** Thai copy for a publish/feature/archive failure. VALIDATION_ERROR/INVALID_TRIGGER can only come
+ * from adminPublish's quiz checks (plan §4.5); INVALID_TRIGGER's extra.triggerSec names the
+ * offending question so the toast can point the admin at it directly. Pure/exported for
+ * tests/unit/frontend/admin-video-form-errors.test.ts. */
+export function publishOrFeatureErrorMessage(err: { code: string; extra: Record<string, unknown> }): string {
+  if (err.code === "INVALID_TRIGGER") {
+    const triggerSec = err.extra.triggerSec;
+    return copy.errors.invalidTrigger(typeof triggerSec === "number" ? formatMmSsTenths(triggerSec) : "");
+  }
+  if (err.code === "VALIDATION_ERROR") return copy.errors.validation;
+  if (err.code === "INVALID_TRANSITION") return sessionsCopy.rejectReason.INVALID_TRANSITION;
+  if (err.code === "BAD_ORIGIN") return copy.badOrigin;
+  return copy.errors.generic;
+}
 
 export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
   const mode: "create" | "edit" = videoId ? "edit" : "create";
@@ -39,6 +55,7 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
 
   const [previewHandle, setPreviewHandle] = useState<YouTubePreviewHandle | null>(null);
   const [previewReady, setPreviewReady] = useState(false);
+  const [previewCurrentTime, setPreviewCurrentTime] = useState(0);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
 
   useEffect(() => {
@@ -70,6 +87,7 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
     return () => {
       setPreviewReady(false);
       setPreviewHandle(null);
+      setPreviewCurrentTime(0);
     };
   }, [youtubeId]);
 
@@ -164,7 +182,9 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
       setVideo(fresh);
       show("เผยแพร่แล้วค่ะ");
     } catch (err) {
-      if (err instanceof AdminApiError) show(err.message);
+      if (!(err instanceof AdminApiError)) return;
+      if (err.code === "UNAUTHENTICATED") return router.push("/admin/login?reason=expired");
+      show(publishOrFeatureErrorMessage(err));
     }
   };
 
@@ -176,15 +196,23 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
       setVideo(fresh);
       show("ตั้งเป็นคลิปแนะนำแล้วค่ะ (คลิปแนะนำเดิมถูกยกเลิก)");
     } catch (err) {
-      if (err instanceof AdminApiError) show(err.message);
+      if (!(err instanceof AdminApiError)) return;
+      if (err.code === "UNAUTHENTICATED") return router.push("/admin/login?reason=expired");
+      show(publishOrFeatureErrorMessage(err));
     }
   };
 
   const handleArchive = async () => {
     if (!video) return;
     setArchiveConfirm(false);
-    await adminApi.archiveVideo(video.id);
-    router.push("/admin/videos");
+    try {
+      await adminApi.archiveVideo(video.id);
+      router.push("/admin/videos");
+    } catch (err) {
+      if (!(err instanceof AdminApiError)) return;
+      if (err.code === "UNAUTHENTICATED") return router.push("/admin/login?reason=expired");
+      show(publishOrFeatureErrorMessage(err));
+    }
   };
 
   if (loading) {
@@ -250,7 +278,7 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
 
       <div className="video-form-grid" style={{ display: "grid", gap: 24 }}>
         <div>
-          <YouTubePreview youtubeId={youtubeId} onReady={handlePreviewReady} onDuration={handleDuration} />
+          <YouTubePreview youtubeId={youtubeId} onReady={handlePreviewReady} onDuration={handleDuration} onTimeUpdate={setPreviewCurrentTime} />
         </div>
         <div>
           <VideoForm mode={mode} values={values} onChange={setValues} channelName={channelName} durationSec={durationSec} locked={locked} errors={errors} />
@@ -268,6 +296,7 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
               videoSaved
               previewReady={previewReady}
               previewHandle={previewHandle}
+              previewCurrentTime={previewCurrentTime}
               onQuestionsChange={setQuestions}
             />
           )}

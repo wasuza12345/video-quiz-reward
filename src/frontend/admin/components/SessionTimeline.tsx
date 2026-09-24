@@ -216,9 +216,7 @@ export function SessionTimeline({ events, startedAt }: { events: AdminSessionEve
                   <td style={{ padding: "10px 16px" }} title={new Date(first.serverAt).toLocaleString("th-TH")}>
                     {timeOffset(first, startedAt)}
                   </td>
-                  <td style={{ padding: "10px 16px" }}>
-                    <Badge tone="neutral">{copy.detail.timeline.systemChip}</Badge>
-                  </td>
+                  <td style={{ padding: "10px 16px" }}>{first.seq !== null && last.seq !== null ? (first.seq === last.seq ? `#${first.seq}` : `#${first.seq}–#${last.seq}`) : <Badge tone="neutral">{copy.detail.timeline.systemChip}</Badge>}</td>
                   <td colSpan={4} style={{ padding: "10px 16px" }}>
                     <button
                       type="button"
