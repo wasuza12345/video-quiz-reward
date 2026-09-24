@@ -1,0 +1,35 @@
+# deps
+node_modules/
+
+# next
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# env (keep the example)
+.env*
+!.env.example
+
+# sqlite
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# generated prisma client
+src/generated/
+
+# agent harness runtime state
+.agent/state/
+
+# playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# misc
+.DS_Store
+coverage/
+.vercel

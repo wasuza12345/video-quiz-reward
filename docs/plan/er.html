@@ -1,0 +1,78 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Quiz ER</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--box:#f5f6f8;--line:#8a8f98;--pk:#9a6b00;--fk:#2d5bd7;--uq:#8a3fb8;
+ --g-admin:#8a3fb8;--g-content:#2d7d46;--g-watch:#2d5bd7;--g-reward:#c0572b;--hi:#ffb020}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e8e8e8;--box:#1d2127;--line:#6b717b;--pk:#e0b050;--fk:#7ea6ff;--uq:#c68ce8;
+ --g-admin:#a066d0;--g-content:#4caf6e;--g-watch:#5b8cff;--g-reward:#e07a4a}}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;padding:16px}
+h1{font-size:18px;margin:0 0 4px} p{margin:0 0 10px;opacity:.8}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 10px;font-size:13px}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:var(--c)}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+svg{display:block;min-width:1320px}
+rect.b{fill:var(--box);stroke:var(--line)} text{fill:var(--fg);font:12px ui-monospace,monospace}
+text.n{fill:#fff;font-weight:700;font-size:13px;font-family:system-ui}
+text.pk{fill:var(--pk)} text.fk{fill:var(--fk)} text.uq{fill:var(--uq)}
+path.r{fill:none;stroke:var(--line);stroke-width:1.4;transition:stroke .15s}
+path.r.on{stroke:var(--hi);stroke-width:2.6}
+g.t{cursor:pointer} g.t.dim{opacity:.35}
+text.c{fill:var(--line);font:11px system-ui}
+</style></head><body>
+<h1>ER v5.1 — Video Quiz &amp; Reward (Prisma + SQLite/libSQL)</h1>
+<p>🔑 PK · 🔗 FK · ◆ unique. Hover a table to highlight its relations. Source of truth: <code>docs/plan/plan.md</code> §3.</p>
+<div class="legend">
+ <span style="--c:var(--g-admin)">Admin / backoffice</span><span style="--c:var(--g-content)">Content</span>
+ <span style="--c:var(--g-watch)">Watching (timeline)</span><span style="--c:var(--g-reward)">Reward</span></div>
+<div class="wrap"><svg id="er" xmlns="http://www.w3.org/2000/svg"></svg></div>
+<script>
+const T=[
+ {id:"Admin",g:"admin",x:20,y:20,f:["🔑 id","◆ email","passwordHash","tokenVersion","createdAt"]},
+ {id:"AdminAuditLog",g:"admin",x:20,y:200,f:["🔑 id","🔗 adminId","action","entity · entityId","diff? (JSON)","createdAt"]},
+ {id:"LoginThrottle",g:"admin",x:20,y:390,f:["🔑 key ip:sha(email|ip) · email:sha(email)","failCount","windowStart · lockedUntil?","updatedAt"]},
+ {id:"User",g:"content",x:20,y:560,f:["🔑 id (signed cookie uuid)","createdAt"]},
+ {id:"Video",g:"content",x:330,y:20,f:["🔑 id","◆ youtubeId","title","channelName","durationSec","rewardPoints","status draft|published|archived","isFeatured","publishedAt?","createdAt · updatedAt"]},
+ {id:"QuizQuestion",g:"content",x:330,y:300,f:["🔑 id","🔗 videoId","triggerSec  ◆(videoId,triggerSec)","prompt","correctChoice (server only)"]},
+ {id:"QuizChoice",g:"content",x:330,y:480,f:["🔑🔗 questionId","🔑 label A..D","text"]},
+ {id:"WatchSession",g:"watch",x:680,y:20,f:["🔑 id","🔗 userId","🔗 videoId","isReplay","state","currentQuestionId? · passedQuestionIds","positionSec","furthestSec","playedWallSec · bankSec","lastPlayingAt?","lastSeq · version · eventCount","flagged · softRejectCount","startedAt · endedAt?"]},
+ {id:"QuizAttempt",g:"watch",x:680,y:390,f:["🔑 id","🔗 sessionId","🔗 questionId","choice","isCorrect","createdAt"]},
+ {id:"WatchEvent",g:"watch",x:1010,y:20,f:["🔑 id","🔗 sessionId","seq? ◆(sessionId,seq)","type PLAY|PAUSE|TICK|SEEK|…","positionSec","clientAt? · serverAt","accepted · rejectReason?","fromState → toState","payload? (JSON)"]},
+ {id:"PointsLedger",g:"reward",x:1010,y:300,f:["🔑 id","🔗 userId","🔗 videoId","🔗◆ sessionId","points","reason","createdAt","◆(userId,videoId,reason)"]},
+];
+const R=[ // [from(1), to(N), label, svg path, label x,y] — hand-routed so no line crosses a table
+ ["Admin","AdminAuditLog","1─N","M160,147 V200",166,178],
+ ["User","WatchSession","1─N","M300,595 H315 V270 H645 V250 H680",560,264],
+ ["User","PointsLedger","1─N","M160,630 V660 H1150 V484",600,654],
+ ["Video","QuizQuestion","1─N","M470,242 V300",476,275],
+ ["Video","WatchSession","1─N","M610,60 H680",628,54],
+ ["Video","PointsLedger","1─N","M500,20 V8 H1305 V400 H1290",1240,4],
+ ["QuizQuestion","QuizChoice","1─N","M470,427 V480",476,457],
+ ["QuizQuestion","QuizAttempt","1─N","M610,410 H665 V440 H680",622,404],
+ ["WatchSession","QuizAttempt","1─N","M820,299 V390",826,345],
+ ["WatchSession","WatchEvent","1─N","M960,60 H1010",968,54],
+ ["WatchSession","PointsLedger","1─0..1","M960,265 H985 V350 H1010",930,290],
+];
+const W=280,H=24,RH=19,svg=document.getElementById("er"),NS="http://www.w3.org/2000/svg";
+const el=(n,a,p=svg)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e};
+const box={};T.forEach(t=>box[t.id]={...t,w:W,h:H+t.f.length*RH+8});
+const layer=el("g",{});
+R.forEach(([a,b,lab,d,lx,ly])=>{
+ el("path",{d,class:"r","marker-end":"url(#m)","data-a":a,"data-b":b},layer);
+ el("text",{class:"c",x:lx,y:ly},layer).textContent=lab;
+});
+el("defs",{}).innerHTML='<marker id="m" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10" fill="none" stroke="#8a8f98"/></marker>';
+let maxY=0;
+Object.values(box).forEach(b=>{
+ const g=el("g",{class:"t",transform:`translate(${b.x},${b.y})`,"data-id":b.id});
+ el("rect",{class:"b",width:b.w,height:b.h,rx:6},g);
+ el("rect",{width:b.w,height:H,rx:6,fill:`var(--g-${b.g})`},g);
+ el("text",{class:"n",x:10,y:17},g).textContent=b.id;
+ b.f.forEach((f,i)=>{const c=f.startsWith("🔑")?"pk":f.includes("🔗")?"fk":f.includes("◆")?"uq":"";
+  el("text",{class:c,x:10,y:H+18+i*RH},g).textContent=f});
+ maxY=Math.max(maxY,b.y+b.h);
+ g.addEventListener("mouseenter",()=>{svg.querySelectorAll("path.r").forEach(p=>{const on=p.dataset.a===b.id||p.dataset.b===b.id;p.classList.toggle("on",on)});
+  svg.querySelectorAll("g.t").forEach(o=>{const id=o.dataset.id;const rel=id===b.id||[...svg.querySelectorAll("path.r.on")].some(p=>p.dataset.a===id||p.dataset.b===id);o.classList.toggle("dim",!rel)})});
+ g.addEventListener("mouseleave",()=>{svg.querySelectorAll(".on,.dim").forEach(o=>o.classList.remove("on","dim"))});
+});
+svg.setAttribute("viewBox",`0 -14 1330 ${maxY+64}`);
+</script></body></html>

@@ -1,0 +1,5 @@
+id: claude
+kind: claude
+# model: opus
+# Bypass requested explicitly by the human (2026-09-24). isolation is shared → all roles edit the same tree.
+args: ["--dangerously-skip-permissions"]
