@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Local file DB only — the single Turso DB is production and never used by CI.
+    env:
+      DATABASE_URL: file:./ci.db
+      ADMIN_SESSION_SECRET: ci-only-admin-session-secret-0123456789abcdef
+      USER_COOKIE_SECRET: ci-only-user-cookie-secret-0123456789abcdef
+      ADMIN_EMAIL: admin@ci.local
+      ADMIN_PASSWORD: ci-only-password-123
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npx prisma validate
+      - name: Migrate fresh file DB
+        run: npm run db:migrate
+      - name: Seed (twice — must be idempotent)
+        run: npm run db:seed && npm run db:seed
+      - run: npm test
+      - run: npm run build

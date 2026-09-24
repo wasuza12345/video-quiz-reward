@@ -1,0 +1,11 @@
+/* Design tokens land in P4 (docs/design/reference-engonair.md). */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+}

@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------- admin ----------
+model Admin {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  passwordHash String                                      // bcrypt
+  tokenVersion Int             @default(0)                 // bump on logout-all / password change → old JWTs invalid
+  createdAt    DateTime        @default(now())
+  auditLogs    AdminAuditLog[]
+}
+
+model LoginThrottle {                                      // two rows per attempt: "ip:<sha(email|ip)>" and "email:<sha(email)>"
+  key         String    @id
+  failCount   Int       @default(0)                        // atomic { increment: 1 }
+  windowStart DateTime  @default(now())                    // email key: 50 fails / hour → 429
+  lockedUntil DateTime?                                    // ip key: 5 fails → 15 min
+  updatedAt   DateTime  @updatedAt
+}
+
+model AdminAuditLog {                                      // optional in P5 (cut if time is short)
+  id        Int      @id @default(autoincrement())
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id])
+  action    String                                         // video.create | video.publish | question.update …
+  entity    String
+  entityId  String
+  diff      String?                                        // JSON text
+  createdAt DateTime @default(now())
+  @@index([entity, entityId])
+}
+
+// ---------- content ----------
+model User {
+  id        String         @id                             // UUID inside the signed vq_uid cookie
+  createdAt DateTime       @default(now())
+  sessions  WatchSession[]
+  points    PointsLedger[]
+}
+
+model Video {
+  id           String         @id @default(uuid())
+  youtubeId    String         @unique
+  title        String
+  channelName  String                                      // oEmbed author_name, shown as "วิดีโอจาก YouTube: {channelName}"
+  durationSec  Float                                       // server truth
+  rewardPoints Int            @default(50)
+  status       String         @default("draft")            // draft | published | archived
+  isFeatured   Boolean        @default(false)              // at most one true (enforced in service)
+  publishedAt  DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  questions    QuizQuestion[]
+  sessions     WatchSession[]
+  points       PointsLedger[]
+  @@index([status])
+}
+
+model QuizQuestion {                                       // order = ascending triggerSec
+  id            String        @id @default(uuid())
+  videoId       String
+  video         Video         @relation(fields: [videoId], references: [id])
+  triggerSec    Float
+  prompt        String
+  correctChoice String                                     // never sent to the public client
+  choices       QuizChoice[]
+  attempts      QuizAttempt[]
+  @@unique([videoId, triggerSec])
+}
+
+model QuizChoice {
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label      String                                        // "A".."D"
+  text       String
+  @@id([questionId, label])
+}
+
+// ---------- watching ----------
+model WatchSession {
+  id                String        @id @default(uuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id])
+  videoId           String
+  video             Video         @relation(fields: [videoId], references: [id])
+  isReplay          Boolean       @default(false)          // created after the video was already rewarded
+  state             String        @default("CREATED")     // §5
+  currentQuestionId String?                                // set while QUIZ_PENDING
+  passedQuestionIds String        @default("[]")          // JSON array — inside the CAS'd row (QuizAttempt is audit only)
+  positionSec       Float         @default(0)             // last accepted position (TICK / SEEK back only)
+  furthestSec       Float         @default(0)             // max accepted TICK position; watched = [0, furthestSec]
+  playedWallSec     Float         @default(0)             // server wall time spent in PLAYING (canEnd only)
+  bankSec           Float         @default(3)             // token bucket for progress past furthestSec (§6), max 6
+  lastPlayingAt     DateTime?                             // serverAt when PLAYING credit was last taken; null if not PLAYING
+  lastSeq           Int           @default(0)             // highest client seq accepted
+  version           Int           @default(0)             // CAS guard, bumped by EVERY session write (§4.2)
+  eventCount        Int           @default(0)             // abuse cap
+  softRejectCount   Int           @default(0)             // SPEED_EXCEEDED + NOT_WATCHED; flag at ≥ 3 (§5)
+  flagged           Boolean       @default(false)
+  startedAt         DateTime      @default(now())
+  endedAt           DateTime?
+  events            WatchEvent[]
+  attempts          QuizAttempt[]
+  reward            PointsLedger?
+  @@index([userId, videoId, startedAt])
+  @@index([videoId, flagged])
+}
+
+model WatchEvent {                                         // append-only timeline (audit, backoffice view)
+  id           Int          @id @default(autoincrement())
+  sessionId    String
+  session      WatchSession @relation(fields: [sessionId], references: [id])
+  seq          Int?                                        // client counter ≥ 1; NULL for server rows (RESUME, ANSWER, CLAIM)
+  type         String                                      // PLAY | PAUSE | TICK | SEEK | TAB_HIDDEN | ENDED | ANSWER | CLAIM | RESUME
+  positionSec  Float
+  clientAt     DateTime?                                   // display only
+  serverAt     DateTime     @default(now())
+  accepted     Boolean
+  rejectReason String?
+  fromState    String
+  toState      String
+  payload      String?                                     // JSON, e.g. {"questionId":"…","choice":"B"}
+  @@unique([sessionId, seq])                               // SQLite allows many NULLs → server rows OK
+  @@index([sessionId, serverAt])
+}
+
+model QuizAttempt {
+  id         Int          @id @default(autoincrement())
+  sessionId  String
+  session    WatchSession @relation(fields: [sessionId], references: [id])
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id])
+  choice     String
+  isCorrect  Boolean
+  createdAt  DateTime     @default(now())
+  @@index([sessionId, questionId])
+}
+
+model PointsLedger {
+  id        Int          @id @default(autoincrement())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  videoId   String
+  video     Video        @relation(fields: [videoId], references: [id])
+  sessionId String       @unique
+  session   WatchSession @relation(fields: [sessionId], references: [id])
+  points    Int
+  reason    String                                         // "video_completed"
+  createdAt DateTime     @default(now())
+  @@unique([userId, videoId, reason])                      // once per user per video, race-safe
+}
