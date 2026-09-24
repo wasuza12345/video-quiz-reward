@@ -1,4 +1,6 @@
-// Placeholder — WatchPage arrives in P4.
-export default function WatchRoute() {
-  return <main />;
+import { WatchPage } from "@/frontend/public/pages/WatchPage";
+
+export default async function WatchRoute({ params }: { params: Promise<{ videoId: string }> }) {
+  const { videoId } = await params;
+  return <WatchPage videoId={videoId} />;
 }

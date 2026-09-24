@@ -1,11 +1,334 @@
-/* Design tokens land in P4 (docs/design/reference-engonair.md). */
+/* Design tokens — docs/design/spec.md §1 (values verified against docs/design/reference-engonair.md). */
+
+@font-face {
+  font-family: "LINE Seed Sans TH";
+  src: url("/fonts/LINESeedSansTH-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "LINE Seed Sans TH";
+  src: url("/fonts/LINESeedSansTH-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Colour (§1.1) */
+  --brand-primary: #1d3793;
+  --brand-primary-dark: #1a2a5e;
+  --brand-primary-2: #2b4bb5;
+  --brand-accent: #d81e1d;
+  --brand-accent-hover: #b91c1c;
+  --bg: #f0eee9;
+  --bg-admin: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --text: #111827;
+  --text-2: #475569;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --border-control: #64748b;
+  --track: #e2e8f0;
+  --gold: #fcd34d;
+  --success: #047857;
+  --success-bg: #ecfdf5;
+  --danger: #b91c1c;
+  --danger-bg: #fef2f2;
+  --warning: #92400e;
+  --warning-bg: #fef3c7;
+  --info-bg: #eef2ff;
+  --scrim: rgba(15, 23, 42, 0.72);
+
+  /* Typography (§1.2) */
+  --font: "LINE Seed Sans TH", "Noto Sans Thai", sans-serif;
+  --fs-display: 28px;
+  --fs-h1: 24px;
+  --fs-h2: 20px;
+  --fs-lg: 18px;
+  --fs-md: 16px;
+  --fs-sm: 14px;
+  --fs-xs: 13px;
+  --fs-score: 56px;
+
+  /* Spacing / shape / elevation (§1.3) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --gutter: 16px;
+  --max-width-public: 1120px;
+  --max-width-watch: 880px;
+  --radius-pill: 50px;
+  --radius-card: 20px;
+  --radius-media: 14px;
+  --radius-field: 12px;
+  --radius-tag: 6px;
+  --shadow-card: 0 12px 35px #0000000d;
+  --shadow-cta: 0 4px 15px #d81e1d33;
+  --shadow-modal: 0 20px 40px -10px #1a2a5e40;
+  --motion-duration: 200ms;
+  --motion-ease: cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+@media (max-width: 600px) {
+  :root {
+    --radius-card: 16px;
+    --shadow-card: 0 5px 5px #0000000d;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 1024px) {
+  :root {
+    --gutter: 24px;
+  }
+}
+
+@media (min-width: 1025px) {
+  :root {
+    --gutter: 32px;
+    --fs-display: 40px;
+    --fs-h1: 32px;
+    --fs-h2: 24px;
+    --fs-score: 72px;
+  }
+}
+
 *,
 *::before,
 *::after {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.35;
+  margin: 0;
+  color: var(--brand-primary-dark);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Numbers stay aligned in scores, counters, timers (§1.2). */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible focus ring everywhere (§7 Accessibility). */
+:focus-visible {
+  outline: 3px solid var(--brand-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.on-navy:focus-visible {
+  outline-color: #ffffff;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Card (shared/ui/Card.tsx) hover-lift is desktop-pointer-only and skipped under reduced motion. */
+@media (hover: hover) {
+  .card-interactive:hover {
+    transform: translateY(-8px);
+  }
+}
+.card-interactive:active {
+  transform: scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-interactive:hover {
+    transform: none;
+  }
+}
+
+/* Skeleton (shared/ui/Skeleton.tsx) shimmer; reduced motion falls back to a static block. */
+.skeleton {
+  background-image: linear-gradient(90deg, var(--surface-2) 25%, #e8ecf1 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background-image: none;
+  }
+}
+
+/* Modal (shared/ui/Modal.tsx) — native <dialog>, reset then styled per mode. */
+dialog.modal-dialog,
+dialog.modal-sheet {
+  border: none;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+  max-height: 85vh;
+  overflow: auto;
+}
+dialog.modal-dialog::backdrop,
+dialog.modal-sheet::backdrop {
+  background: var(--scrim);
+}
+dialog.modal-dialog {
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  width: min(520px, calc(100vw - 32px));
+  margin: auto;
+}
+dialog.modal-sheet {
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  width: 100%;
+  margin: auto 0 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@media (min-width: 601px) {
+  dialog.modal-sheet {
+    border-radius: var(--radius-card);
+    width: min(520px, calc(100vw - 32px));
+    margin: auto;
+  }
+}
+
+/* PublicHeader (frontend/public/components/PublicHeader.tsx) — back link is mobile-only. */
+@media (min-width: 601px) {
+  .header-back-link {
+    display: none !important;
+  }
+}
+
+/* VideoGrid (frontend/public/components/VideoGrid.tsx) — 1 col ≤600, 2 cols 601-1024, 3 cols ≥1025. */
+.video-grid {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 601px) and (max-width: 1024px) {
+  .video-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1025px) {
+  .video-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* HowItWorks (frontend/public/components/HowItWorks.tsx) — a row at ≥1025, stacked below. */
+@media (min-width: 1025px) {
+  .how-it-works {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+}
+
+/* WatchPage title placement (spec §4.1): above the player at ≥1025, below the controls ≤1024
+ * so the player + ControlBar are visible without scrolling on a 360×640 screen. */
+.watch-title-mobile {
+  display: block;
+}
+.watch-title-desktop {
+  display: none;
+}
+@media (min-width: 1025px) {
+  .watch-title-mobile {
+    display: none;
+  }
+  .watch-title-desktop {
+    display: block;
+  }
+}
+
+/* VideoPlayer (frontend/public/components/VideoPlayer.tsx) — `new YT.Player(el, ...)` replaces
+ * `el` with the iframe itself (so this class ends up ON the iframe, not a parent of it) and sets
+ * a fixed pixel width/height by default; force it to fill the 16:9 container instead. */
+.yt-player-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* FeaturedVideoCard (frontend/public/components/FeaturedVideoCard.tsx) — stacked ≤1024, a
+ * horizontal 58%-thumbnail layout ≥1025 (spec §3.1). */
+.featured-card {
+  flex-direction: column;
+}
+.featured-media {
+  width: 100%;
+}
+.featured-content {
+  min-width: 0;
+}
+.featured-cta {
+  width: 100%;
+}
+@media (min-width: 1025px) {
+  .featured-card {
+    flex-direction: row;
+    gap: 24px;
+    padding: 24px;
+  }
+  .featured-media {
+    width: 58%;
+    flex-shrink: 0;
+  }
+  .featured-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .featured-cta {
+    width: auto;
+    align-self: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

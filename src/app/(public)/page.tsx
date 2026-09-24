@@ -1,4 +1,5 @@
-// Placeholder — VideoListPage arrives in P4.
+import { VideoListPage } from "@/frontend/public/pages/VideoListPage";
+
 export default function HomePage() {
-  return <main />;
+  return <VideoListPage />;
 }

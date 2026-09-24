@@ -462,6 +462,12 @@ the reducer reconciles to it: 409 or rejected progress → adopt server `positio
 7. `/admin/*` placeholder test that P5a must flip to 401/redirect. 8. `Secure` on http://localhost: Chromium OK; WebKit needs https or skip.
 - Event cap = `max(2000, ceil(durationSec × 3))` (long videos must stay finishable); `/answer` counts toward it.
 
+### Backlog (deferred by human 2026-09-24)
+- clean-code structure review @aaa9f37 — verdict "trim lightly": 2 MAJOR (duplicate event type in watch-session.service.ts:12-17;
+  draft→404 decided in service.ts:123 and resume-policy.ts:30) + 5 MINOR (user pass-through, Pick<VideoRow>, findOwned,
+  VIDEO_STATUSES to shared/constants, INTERNAL_ERROR code). ~36→32 files, ~−60 lines, no behaviour change. Not scheduled.
+  Note: the 2 MAJORs are ~7 lines, zero-risk — fold them in only if a later phase touches those files anyway (needs human OK).
+
 ## 11. Decisions (all closed 2026-09-24)
 - **D1 prod DB:** Turso + Prisma libsql adapter (Vercel Marketplace `tursocloud/database`).
 - **D2 identity:** anonymous signed cookie UUID (`vq_uid`), no login for learners.
