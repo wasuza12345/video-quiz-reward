@@ -4,6 +4,9 @@ import { expect, test, type Response } from "@playwright/test";
 import { clickPlayPause } from "../helpers/watch";
 
 test.setTimeout(90_000);
+// Deterministic, not flaky (see the bug report sent to coder) — retrying just burns ~48s for the
+// same result, so this file opts out of the suite's default retry.
+test.describe.configure({ retries: 0 });
 
 interface SessionBody {
   positionSec: number;
@@ -29,6 +32,12 @@ test("refresh mid-video resumes at the paused position, and the next TICK doesn'
 
   await clickPlayPause(page);
   await page.waitForTimeout(6_500);
+  // Pause before reloading — Chromium's Media Engagement Index can let a fresh embed of a video
+  // that just played autoplay on the very next load of the same origin, regardless of any
+  // --autoplay-policy flag; explicitly pausing first avoids handing the reload a still-playing
+  // player (also just more realistic: a real user pauses, or the tab backgrounds, before a
+  // refresh — not mid-frame).
+  await clickPlayPause(page, "หยุดชั่วคราว");
 
   const resumeResponse = captureFirstJson(page, (url, method) => method === "POST" && url.pathname === "/api/sessions");
   await page.goto(watchUrl);

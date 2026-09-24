@@ -46,15 +46,20 @@ export default defineConfig({
     // P6b — real-browser UI specs (plan §10 full list). desktop-only/ (the honest real-iframe
     // flow + the admin CRUD/timeline flow) only makes sense once, so only "ui-desktop" picks it
     // up; both-viewports/ (refresh, quiz Esc, the seekTo cheat) is cheap enough to run twice.
+    // No --autoplay-policy override: Chromium's own "sticky activation" (the real Play click
+    // satisfies the user-gesture requirement for the rest of that document's life) already
+    // covers the programmatic auto-resume after a correct answer. Forcing the policy off instead
+    // made a freshly-reloaded (should-be-PAUSED) page autoplay on its own — which the app's state
+    // machine never anticipated and which broke the refresh spec outright.
     {
       name: "ui-desktop",
       testDir: "./tests/e2e/browser",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, launchOptions: { args: ["--autoplay-policy=no-user-gesture-required"] } },
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },
     {
       name: "ui-mobile",
       testDir: "./tests/e2e/browser/both-viewports",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 }, launchOptions: { args: ["--autoplay-policy=no-user-gesture-required"] } },
+      use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
     },
   ],
 });
