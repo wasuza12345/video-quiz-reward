@@ -195,7 +195,7 @@ describe("§5 batch rule", () => {
     const r = applyClientEvents(start, VIDEO, [ev("TICK", 6), ev("TICK", 9), ev("TICK", 7), ev("PAUSE", 7), ev("SEEK", 2)], at(1));
     expect(r.events.map((e) => [e.type, e.accepted, e.rejectReason])).toEqual([
       ["TICK", true, null],
-      ["TICK", false, "SEEK_FORWARD"],
+      ["TICK", false, "SPEED_EXCEEDED"],
       ["TICK", false, "BATCH_ABORTED"],
       ["PAUSE", true, null],
       ["SEEK", false, "BATCH_ABORTED"],
@@ -221,5 +221,26 @@ describe("§5 batch rule", () => {
     const copy = structuredClone(start);
     applyClientEvents(start, VIDEO, [ev("TICK", 6), ev("PAUSE", 6)], at(1));
     expect(start).toEqual(copy);
+  });
+});
+
+describe("§6 position validation: finite and within [0, durationSec + 5]", () => {
+  it("rejects non-finite or out-of-range positions as INVALID_POSITION (not flagged, not a soft reject)", () => {
+    const before = playing({ positionSec: 5, furthestSec: 5 });
+    for (const pos of [NaN, Infinity, -Infinity, -1, VIDEO.durationSec + 5.01]) {
+      const { s, rec } = one(before, ev("TICK", pos));
+      expect(rec).toMatchObject({ accepted: false, rejectReason: "INVALID_POSITION" });
+      expect(s).toMatchObject({ softRejectCount: 0, flagged: false, positionSec: 5, furthestSec: 5 });
+    }
+  });
+
+  it("applies to every event type, not only TICK/SEEK", () => {
+    const { rec } = one(session({ state: "PAUSED" }), ev("PLAY", NaN));
+    expect(rec).toMatchObject({ accepted: false, rejectReason: "INVALID_POSITION" });
+  });
+
+  it("accepts the boundary position durationSec + 5 (rejected only by the bank rule, not INVALID_POSITION)", () => {
+    const { rec } = one(playing({ furthestSec: 0 }), ev("TICK", VIDEO.durationSec + 5), 1);
+    expect(rec.rejectReason).not.toBe("INVALID_POSITION");
   });
 });

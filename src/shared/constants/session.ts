@@ -23,6 +23,7 @@ export const REJECT_REASONS = [
   "NOT_WATCHED",
   "INVALID_TRANSITION",
   "BATCH_ABORTED",
+  "INVALID_POSITION",
 ] as const;
 export type RejectReason = (typeof REJECT_REASONS)[number];
 
@@ -35,8 +36,8 @@ export const TOLERANCES = {
   /** Bank refill per credited second (allows 1.1× progress). */
   BANK_RATE: 1.1,
   BANK_INITIAL_SEC: 3,
-  BANK_MAX_SEC: 6,
-  /** Forward slack past furthestSec for TICK and SEEK (s). */
+  BANK_MAX_SEC: 10,
+  /** Forward slack past furthestSec for explicit SEEK only (s); TICK has no slack of its own. */
   FORWARD_SLACK_SEC: 1.5,
   /** canEnd: furthestSec must reach durationSec − this (s). */
   END_SLACK_SEC: 2,

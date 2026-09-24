@@ -70,14 +70,54 @@ describe("scenarios", () => {
     expect(decideClaim(sim.s, true, 50)).toEqual({ ok: true, award: false }); // second claim
   });
 
-  it("setPlaybackRate(2): 2 s steps exceed the 1.5 s slack → SEEK_FORWARD (flagged), cannot end early", () => {
+  it("honest viewer with jittered batch arrivals (+4, +4.5, +4, +6 s, …) gets 0 rejections and +50", () => {
+    const sim = new Sim();
+    sim.send([ev("PLAY", 0)], 0);
+
+    const gaps = [4, 4.5, 4, 6];
+    let gapIdx = 0;
+    let wall = 0;
+    // Honest 1× playback, but flushed at irregular real-world intervals instead of a fixed 5 s
+    // cadence: position never advances faster than the reported wall-clock gap, so the bank
+    // (refilled at 1.1× per credited second, credited before the check) always covers it.
+    const playTo = (target: number) => {
+      let pos = sim.s.positionSec;
+      while (pos < target) {
+        const gap = gaps[gapIdx++ % gaps.length];
+        pos = Math.min(pos + gap, target);
+        wall += gap;
+        sim.send([ev("TICK", pos)], wall);
+      }
+    };
+
+    playTo(13);
+    expect(sim.s).toMatchObject({ state: "QUIZ_PENDING", positionSec: 13, currentQuestionId: "q1" });
+    expect(sim.answer("D")).toBe(true);
+
+    wall += 5; // time spent on the quiz is not PLAYING time
+    sim.send([ev("PLAY", 13)], wall);
+    playTo(44);
+    sim.send([ev("ENDED", 44)], wall);
+
+    expect(sim.rejected()).toEqual([]);
+    expect(sim.s.state).toBe("ENDED");
+    expect(sim.s.flagged).toBe(false);
+    expect(decideClaim(sim.s, false, 50)).toEqual({ ok: true, award: true, points: 50 });
+  });
+
+  it("setPlaybackRate(2): outruns the bank → SPEED_EXCEEDED, flagged at the 3rd soft reject, cannot end early", () => {
     const sim = new Sim();
     sim.s = session({ passedQuestionIds: ["q1"] }); // even with the quiz out of the way
     sim.send([ev("PLAY", 0)], 0);
     const wall = watch(sim, 0, 0, 22, 2); // 22 s of wall time would reach 44 at 2×
 
-    expect(sim.rejected()).toContain("SEEK_FORWARD");
+    // Each individual TICK only advances 2 s (never > BANK_MAX_SEC on its own), so the run
+    // starts by draining the bank into soft SPEED_EXCEEDED rejects — flagging by the 3rd —
+    // before the client's ever-climbing reported position outruns the stalled furthestSec
+    // by more than the bank can ever hold, which then also trips the hard SEEK_FORWARD.
+    expect(sim.rejected()).toContain("SPEED_EXCEEDED");
     expect(sim.s.flagged).toBe(true);
+    expect(sim.s.softRejectCount).toBeGreaterThanOrEqual(TOLERANCES.SOFT_REJECT_FLAG_AT);
     expect(sim.s.furthestSec).toBeLessThan(VIDEO.durationSec - TOLERANCES.END_SLACK_SEC);
     const [end] = sim.send([ev("ENDED", 44)], wall);
     expect(end.rejectReason).toBe("NOT_WATCHED");

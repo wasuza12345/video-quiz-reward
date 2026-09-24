@@ -26,12 +26,15 @@ export type TickCheck = { ok: true; cost: number } | { ok: false; reason: "SEEK_
 
 /**
  * (2) Token bucket for a TICK. Rewatching (pos ≤ furthestSec) is free; new ground costs
- * `pos − furthestSec` from the bank. A jump past furthestSec + 1.5 is a forward seek.
+ * `need = pos − furthestSec` from the bank. `need` larger than the bank can ever hold
+ * (> BANK_MAX_SEC) is a forward seek; a smaller shortfall against the current bank is the
+ * soft SPEED_EXCEEDED. The +1.5 s slack (FORWARD_SLACK_SEC) applies to explicit SEEK only
+ * (see checkSeek) — a TICK has no slack of its own.
  */
 export function checkTick(s: SessionSnapshot, pos: number): TickCheck {
   if (pos <= s.furthestSec) return { ok: true, cost: 0 };
-  if (pos > s.furthestSec + FORWARD_SLACK_SEC) return { ok: false, reason: "SEEK_FORWARD" };
   const need = pos - s.furthestSec;
+  if (need > BANK_MAX_SEC) return { ok: false, reason: "SEEK_FORWARD" };
   if (need > s.bankSec) return { ok: false, reason: "SPEED_EXCEEDED" };
   return { ok: true, cost: need };
 }

@@ -54,6 +54,10 @@ function onPause(s: SessionSnapshot): Step {
   }
 }
 
+/**
+ * TICK: only PLAYING moves position. A TICK received while PAUSED or CREATED (e.g. a race
+ * with a pause) is accepted and recorded but does not apply the position.
+ */
 function onTick(s: SessionSnapshot, video: VideoRules, pos: number): Step {
   switch (s.state) {
     case "PLAYING":
@@ -67,12 +71,15 @@ function onTick(s: SessionSnapshot, video: VideoRules, pos: number): Step {
       return reject(s, "INVALID_TRANSITION");
   }
 
-  // (2) bucket check on the reported position, then (3) quiz gate.
-  const check = checkTick(s, pos);
+  // (3) the quiz gate decides the effective position first: a TICK past a trigger is
+  // clamped to it, so (2) the bucket only ever charges up to the trigger, never past it.
+  const gate = quizGateAt(video.questions, s.passedQuestionIds, pos);
+  const effectivePos = gate ? Math.min(pos, gate.triggerSec) : pos;
+
+  const check = checkTick(s, effectivePos);
   if (!check.ok) return reject(s, check.reason);
   const paid = { ...s, bankSec: s.bankSec - check.cost };
 
-  const gate = quizGateAt(video.questions, s.passedQuestionIds, pos);
   if (gate) {
     return accept({
       ...leavePlaying(paid, "QUIZ_PENDING"),
@@ -118,6 +125,9 @@ function applyOne(s: SessionSnapshot, video: VideoRules, e: ClientEvent, serverA
 
 const isProgress = (type: ClientEventType) => PROGRESS_EVENT_TYPES.includes(type);
 
+/** Every reported position must be a real, in-range number; garbage never reaches the domain math below. */
+const isValidPosition = (pos: number, video: VideoRules) => Number.isFinite(pos) && pos >= 0 && pos <= video.durationSec + 5;
+
 export interface BatchResult {
   session: SessionSnapshot;
   events: EventRecord[];
@@ -140,8 +150,11 @@ export function applyClientEvents(
 
   for (const e of events) {
     const fromState = s.state;
-    const step: Step =
-      progressRejected && isProgress(e.type) ? { session: s, accepted: false, reason: "BATCH_ABORTED" } : applyOne(s, video, e, serverAt);
+    const step: Step = !isValidPosition(e.positionSec, video)
+      ? reject(s, "INVALID_POSITION")
+      : progressRejected && isProgress(e.type)
+        ? { session: s, accepted: false, reason: "BATCH_ABORTED" }
+        : applyOne(s, video, e, serverAt);
     s = step.session;
     if (!step.accepted && isProgress(e.type)) progressRejected = true;
     records.push({
