@@ -323,6 +323,69 @@ dialog.modal-sheet {
   }
 }
 
+/* Table (shared/ui/Table.tsx) — a real <table> >=601px, stacked cards <=600px (spec §5). */
+.admin-table-desktop {
+  display: none;
+}
+.admin-table-mobile {
+  display: flex;
+}
+@media (min-width: 601px) {
+  .admin-table-desktop {
+    display: table;
+  }
+  .admin-table-mobile {
+    display: none;
+  }
+}
+
+/* AdminVideoFormPage (frontend/admin/pages/AdminVideoFormPage.tsx) — preview/form stacked <=1024,
+   5fr/7fr side by side >=1025 (spec §5.4). */
+.video-form-grid {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 1025px) {
+  .video-form-grid {
+    grid-template-columns: 5fr 7fr;
+  }
+}
+
+/* StatTiles (frontend/admin/components/StatTiles.tsx) — 2 cols <=1024, 4 cols >=1025 (spec §5.2). */
+.stat-tiles-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 1025px) {
+  .stat-tiles-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* AdminSessionDetailPage's SessionFacts — 2 cols <=600, 4 cols >=1025 (spec §5.7). */
+.session-facts-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 1025px) {
+  .session-facts-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* AdminShell (frontend/admin/components/AdminShell.tsx) — sidebar >=1025, top bar + drawer <=1024 (spec §2.2). */
+.admin-sidebar {
+  display: none;
+}
+.admin-topbar {
+  display: flex;
+}
+@media (min-width: 1025px) {
+  .admin-sidebar {
+    display: flex;
+  }
+  .admin-topbar {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

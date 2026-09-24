@@ -63,61 +63,57 @@ export function createQuizRepository(): QuizRepository {
     },
 
     async update(id, input: UpdateQuestionInput, audit, requireUnlocked) {
-      if (requireUnlocked) {
-        // A probe ahead of the real batch below, not folded into it: Prisma's non-interactive
-        // `$transaction([...])` array form runs every element unconditionally (an `updateMany`
-        // matching 0 rows doesn't abort its siblings), so the choice deletes/upserts further down
-        // can't be made conditional on this same check within one call (review round 2 MINOR 3).
-        // `data: {}` (a genuinely empty SET clause) silently matches 0 rows regardless of `where`
-        // — confirmed against the real driver — so the probe uses a real, semantically-harmless
-        // write (+0) instead.
-        const gate = await prisma.quizQuestion.updateMany({ where: { id, video: { sessions: { none: {} } } }, data: { triggerSec: { increment: 0 } } });
-        if (gate.count === 0) return null;
-      }
+      // One interactive transaction (review round 3): the lock gate, the scalar update, the
+      // choice diff and the audit row all commit — or none do. Interactive transactions are
+      // avoided elsewhere in this codebase (plan §9, the viewer hot path against Turso), but this
+      // is a rare admin write where SQLite's write-lock serializing it against a concurrent
+      // session INSERT is an acceptable, explicitly reviewed trade-off.
+      return prisma.$transaction(async (tx) => {
+        if (requireUnlocked) {
+          // `data: {}` (a genuinely empty SET clause) silently matches 0 rows regardless of
+          // `where` — confirmed against the real driver — so this touches a real, harmless field instead.
+          const gate = await tx.quizQuestion.updateMany({ where: { id, video: { sessions: { none: {} } } }, data: { triggerSec: { increment: 0 } } });
+          if (gate.count === 0) return null;
+        }
 
-      const scalarChanges: { triggerSec?: number; prompt?: string; correctChoice?: string } = {};
-      if (input.triggerSec !== undefined) scalarChanges.triggerSec = input.triggerSec;
-      if (input.prompt !== undefined) scalarChanges.prompt = input.prompt;
-      if (input.correctChoice !== undefined) scalarChanges.correctChoice = input.correctChoice;
+        const scalarChanges: { triggerSec?: number; prompt?: string; correctChoice?: string } = {};
+        if (input.triggerSec !== undefined) scalarChanges.triggerSec = input.triggerSec;
+        if (input.prompt !== undefined) scalarChanges.prompt = input.prompt;
+        if (input.correctChoice !== undefined) scalarChanges.correctChoice = input.correctChoice;
+        if (Object.keys(scalarChanges).length > 0) await tx.quizQuestion.update({ where: { id }, data: scalarChanges });
 
-      // Scalar fields + the choice diff + the audit row, batched in one transaction (review round
-      // 2 MINOR 6) rather than as separate sequential calls.
-      const ops = [];
-      if (Object.keys(scalarChanges).length > 0) ops.push(prisma.quizQuestion.update({ where: { id }, data: scalarChanges }));
-      if (input.choices) {
-        const current = await prisma.quizChoice.findMany({ where: { questionId: id }, select: { label: true } });
-        const currentLabels = new Set(current.map((c) => c.label));
-        const nextLabels = new Set(input.choices.map((c) => c.label));
-        const toDelete = [...currentLabels].filter((l) => !nextLabels.has(l));
-        ops.push(
-          ...toDelete.map((label) => prisma.quizChoice.delete({ where: { questionId_label: { questionId: id, label } } })),
-          ...input.choices.map((c: PublicChoice) =>
-            prisma.quizChoice.upsert({
+        if (input.choices) {
+          const current = await tx.quizChoice.findMany({ where: { questionId: id }, select: { label: true } });
+          const currentLabels = new Set(current.map((c) => c.label));
+          const nextLabels = new Set(input.choices.map((c) => c.label));
+          const toDelete = [...currentLabels].filter((l) => !nextLabels.has(l));
+          for (const label of toDelete) await tx.quizChoice.delete({ where: { questionId_label: { questionId: id, label } } });
+          for (const c of input.choices as PublicChoice[]) {
+            await tx.quizChoice.upsert({
               where: { questionId_label: { questionId: id, label: c.label } },
               create: { questionId: id, label: c.label, text: c.text },
               update: { text: c.text },
-            }),
-          ),
-        );
-      }
-      ops.push(auditLogEntry(audit, "question.update", "question", id, input));
-      await prisma.$transaction(ops);
+            });
+          }
+        }
 
-      const row = await loadAdminRow(id);
-      if (!row) throw new Error(`quiz question ${id} vanished during update`);
-      return row;
+        await tx.adminAuditLog.create({ data: { adminId: audit.adminId, action: "question.update", entity: "question", entityId: id, diff: JSON.stringify(input) } });
+
+        const q = await tx.quizQuestion.findUnique({ where: { id }, include: { choices: { orderBy: { label: "asc" } } } });
+        if (!q) throw new Error(`quiz question ${id} vanished during update`);
+        return toAdminRow(q);
+      });
     },
 
     async delete(id, audit) {
-      // The delete itself is the atomic conditional check (review round 2 MINOR 3) — unlike
-      // update, delete has no "always allowed" subset of fields, so there's nothing it could
-      // partially apply; count 0 means locked (or already gone).
-      const result = await prisma.quizQuestion.deleteMany({ where: { id, video: { sessions: { none: {} } } } });
-      if (result.count === 0) return false;
-      // Not batched with the deleteMany above — that already committed by the time we know it
-      // succeeded, so there is nothing left to make atomic with it.
-      await auditLogEntry(audit, "question.delete", "question", id, {});
-      return true;
+      // Interactive transaction (review round 3) so the delete and its audit row are atomic —
+      // see the comment on `update` above for why this is an accepted exception to plan §9.
+      return prisma.$transaction(async (tx) => {
+        const result = await tx.quizQuestion.deleteMany({ where: { id, video: { sessions: { none: {} } } } });
+        if (result.count === 0) return false;
+        await tx.adminAuditLog.create({ data: { adminId: audit.adminId, action: "question.delete", entity: "question", entityId: id, diff: null } });
+        return true;
+      });
     },
   };
 }

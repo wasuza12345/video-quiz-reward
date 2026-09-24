@@ -15,7 +15,7 @@ export interface YTPlayer {
 
 export const YT_PLAYER_STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2, CUED: 5 } as const;
 
-interface YTNamespace {
+export interface YTNamespace {
   Player: new (
     el: HTMLElement | string,
     opts: {
@@ -40,7 +40,9 @@ declare global {
 
 let apiLoadPromise: Promise<YTNamespace> | null = null;
 
-function loadYouTubeIframeApi(): Promise<YTNamespace> {
+/** Exported so the admin preview (frontend/admin/hooks/useAdminYouTubePreview.ts) shares the same
+ * singleton script load instead of injecting the IFrame API twice. */
+export function loadYouTubeIframeApi(): Promise<YTNamespace> {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
   if (window.YT) return Promise.resolve(window.YT);
   if (apiLoadPromise) return apiLoadPromise;

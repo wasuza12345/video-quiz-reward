@@ -1,7 +1,11 @@
 // Admin audit trail (plan §3 AdminAuditLog, review round 2 MINOR 1 — "IMPLEMENT it"). One row per
-// mutation in the video/quiz admin services, written in the same `$transaction([...])` batch as
-// the mutation itself wherever the repository can express it that way, so a written mutation is
-// never silently un-audited.
+// mutation in the video/quiz admin services. This helper (an unexecuted `PrismaPromise`, batched
+// via the plain `$transaction([...])` array form) covers every mutation that has nothing
+// conditional to gate — create, publish/archive, feature. The three that DO gate on a lock check
+// (video/question update, question delete) instead write their audit row directly inside their
+// own interactive `prisma.$transaction(async (tx) => …)` in their repository, specifically so a
+// blocked (locked) write commits nothing at all rather than committing an audit row for a mutation
+// that didn't actually happen — see the "review round 3" comments on those methods.
 import type { Prisma } from "@/backend/lib/prisma";
 import { prisma } from "@/backend/lib/prisma";
 

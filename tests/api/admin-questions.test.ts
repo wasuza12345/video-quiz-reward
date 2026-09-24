@@ -190,6 +190,31 @@ describe("admin quiz question CRUD (plan §4.4/§4.5/§7)", () => {
     expect(res.status).toBe(409);
   });
 
+  it("review round 3: a locked PATCH mixing a blocked field with an always-allowed one applies neither — no partial changes", async () => {
+    const { cookie, video } = await createUnlockedVideo(60);
+    const q = await (
+      await createQuestion(
+        adminRequest(`http://t/api/admin/videos/${video.id}/questions`, { body: { triggerSec: 10, prompt: "Original prompt", choices: CHOICES_2, correctChoice: "A" }, adminCookie: cookie }),
+        paramsOf(video.id),
+      )
+    ).json();
+    await lockVideo(cookie, video.id);
+
+    // triggerSec is blocked once locked; prompt alone would be allowed — sent together, the
+    // whole write must be rejected and the transaction must leave `prompt` untouched too, not
+    // just refuse the triggerSec half.
+    const res = await patchQuestion(
+      adminRequest(`http://t/api/admin/questions/${q.id}`, { method: "PATCH", body: { triggerSec: 20, prompt: "Should never be saved" }, adminCookie: cookie }),
+      paramsOf(q.id),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("VIDEO_LOCKED");
+
+    const stored = await prisma.quizQuestion.findUniqueOrThrow({ where: { id: q.id } });
+    expect(stored.triggerSec).toBe(10);
+    expect(stored.prompt).toBe("Original prompt");
+  });
+
   it("PATCH on a LOCKED question: adding/removing a choice → 409 VIDEO_LOCKED; same-label-set text edits are fine", async () => {
     const { cookie, video } = await createUnlockedVideo(60);
     const q = await (
