@@ -4,6 +4,7 @@ import { POST as archiveVideo } from "@/app/api/admin/videos/[id]/archive/route"
 import { POST as featureVideo } from "@/app/api/admin/videos/[id]/feature/route";
 import { POST as publishVideo } from "@/app/api/admin/videos/[id]/publish/route";
 import { GET as listVideos, POST as createVideo } from "@/app/api/admin/videos/route";
+import { POST as createQuestion } from "@/app/api/admin/videos/[id]/questions/route";
 import { POST as postSessions } from "@/app/api/sessions/route";
 import { prisma } from "@/backend/lib/prisma";
 import { adminRequest, createTestAdmin, newUserId, paramsOf, postJson } from "./helpers";
@@ -30,6 +31,20 @@ async function loggedInAdmin() {
 function randomYoutubeId(): string {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   return Array.from({ length: 11 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
+/** setFeatured() enforces "at most one featured video" globally (plan §4.4), so ANY test that
+ * features a video necessarily de-features whatever else was featured beforehand — including, if
+ * the DB has never been reset since seeding, the seeded brief video that tests/api/seed.test.ts
+ * asserts stays featured. Every test that calls the feature endpoint must snapshot + restore
+ * (this repo's rule: a test that mutates shared DB state must always restore it). */
+async function withFeaturedSnapshotRestored<T>(cookie: string, run: () => Promise<T>): Promise<T> {
+  const previouslyFeatured = await prisma.video.findFirst({ where: { isFeatured: true } });
+  try {
+    return await run();
+  } finally {
+    if (previouslyFeatured) await featureVideo(adminRequest(`${VIDEOS_URL}/${previouslyFeatured.id}/feature`, { adminCookie: cookie }), paramsOf(previouslyFeatured.id));
+  }
 }
 
 /** admin-auth.test.ts already proves the real login flow end to end; these tests only need a
@@ -239,23 +254,19 @@ describe("admin video CRUD (plan §4.4/§4.5/§7)", () => {
   });
 
   it("feature: sets isFeatured and unsets any previously featured video", async () => {
-    // setFeatured() enforces "at most one featured video" globally (plan §4.4), so this test
-    // necessarily de-features whatever else was featured beforehand — including, if the DB has
-    // never been reset since seeding, the seeded brief video that tests/api/seed.test.ts asserts
-    // stays featured. Snapshot + restore whichever video was featured before this test ran (this
-    // repo's rule: a test that mutates shared DB state must always restore it).
-    const previouslyFeatured = await prisma.video.findFirst({ where: { isFeatured: true } });
-
     const admin = await loggedInAdmin();
     const cookie = await issueCookie(admin.id);
-    const a = await (
-      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
-    ).json();
-    const b = await (
-      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
-    ).json();
+    await withFeaturedSnapshotRestored(cookie, async () => {
+      const a = await (
+        await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
+      ).json();
+      const b = await (
+        await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
+      ).json();
+      // Only a published video can be featured (review round 2 MINOR 4).
+      await publishVideo(adminRequest(`${VIDEOS_URL}/${a.id}/publish`, { adminCookie: cookie }), paramsOf(a.id));
+      await publishVideo(adminRequest(`${VIDEOS_URL}/${b.id}/publish`, { adminCookie: cookie }), paramsOf(b.id));
 
-    try {
       const first = await featureVideo(adminRequest(`${VIDEOS_URL}/${a.id}/feature`, { adminCookie: cookie }), paramsOf(a.id));
       expect((await first.json()).isFeatured).toBe(true);
 
@@ -264,8 +275,182 @@ describe("admin video CRUD (plan §4.4/§4.5/§7)", () => {
 
       const aAfter = await getVideo(adminRequest(`${VIDEOS_URL}/${a.id}`, { method: "GET", adminCookie: cookie }), paramsOf(a.id));
       expect((await aAfter.json()).isFeatured).toBe(false);
-    } finally {
-      if (previouslyFeatured) await featureVideo(adminRequest(`${VIDEOS_URL}/${previouslyFeatured.id}/feature`, { adminCookie: cookie }), paramsOf(previouslyFeatured.id));
-    }
+    });
+  });
+});
+
+describe("review round 2 MAJOR: shortening durationSec must not strand an existing question", () => {
+  afterAll(() => prisma.$disconnect());
+
+  it("PATCH durationSec that pushes an existing question's trigger past the new gate window → 422 INVALID_TRIGGER, and the video is left unchanged", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    const created = await (
+      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 60, rewardPoints: 10 }, adminCookie: cookie }))
+    ).json();
+    // triggerSec 50 fits a 60s video (50 < 60-2=58) but not a 52s one (50 is not < 52-2=50).
+    await createQuestion(
+      adminRequest(`http://t/api/admin/videos/${created.id}/questions`, {
+        body: { triggerSec: 50, prompt: "Q?", choices: [{ label: "A", text: "a" }, { label: "B", text: "b" }], correctChoice: "A" },
+        adminCookie: cookie,
+      }),
+      paramsOf(created.id),
+    );
+
+    const res = await patchVideo(
+      adminRequest(`${VIDEOS_URL}/${created.id}`, { method: "PATCH", body: { durationSec: 52 }, adminCookie: cookie }),
+      paramsOf(created.id),
+    );
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("INVALID_TRIGGER");
+
+    const stillOriginal = await getVideo(adminRequest(`${VIDEOS_URL}/${created.id}`, { method: "GET", adminCookie: cookie }), paramsOf(created.id));
+    expect((await stillOriginal.json()).durationSec).toBe(60);
+  });
+
+  it("PATCH durationSec that every question still fits within → 200", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    const created = await (
+      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 60, rewardPoints: 10 }, adminCookie: cookie }))
+    ).json();
+    await createQuestion(
+      adminRequest(`http://t/api/admin/videos/${created.id}/questions`, {
+        body: { triggerSec: 10, prompt: "Q?", choices: [{ label: "A", text: "a" }, { label: "B", text: "b" }], correctChoice: "A" },
+        adminCookie: cookie,
+      }),
+      paramsOf(created.id),
+    );
+
+    const res = await patchVideo(
+      adminRequest(`${VIDEOS_URL}/${created.id}`, { method: "PATCH", body: { durationSec: 30 }, adminCookie: cookie }),
+      paramsOf(created.id),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).durationSec).toBe(30);
+  });
+});
+
+describe("review round 2 MAJOR: publish re-validates every question", () => {
+  afterAll(() => prisma.$disconnect());
+
+  it("publishing a video whose question no longer fits its duration → 422 INVALID_TRIGGER, stays draft", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    const created = await (
+      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 60, rewardPoints: 10 }, adminCookie: cookie }))
+    ).json();
+    await createQuestion(
+      adminRequest(`http://t/api/admin/videos/${created.id}/questions`, {
+        body: { triggerSec: 50, prompt: "Q?", choices: [{ label: "A", text: "a" }, { label: "B", text: "b" }], correctChoice: "A" },
+        adminCookie: cookie,
+      }),
+      paramsOf(created.id),
+    );
+    // Directly corrupt the stored question's triggerSec to simulate one that predates a duration
+    // shortcut the MAJOR fix's own PATCH guard would otherwise have caught — publish is the last line of defense.
+    await prisma.quizQuestion.updateMany({ where: { videoId: created.id }, data: { triggerSec: 59 } });
+
+    const res = await publishVideo(adminRequest(`${VIDEOS_URL}/${created.id}/publish`, { adminCookie: cookie }), paramsOf(created.id));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("INVALID_TRIGGER");
+
+    const stillDraft = await getVideo(adminRequest(`${VIDEOS_URL}/${created.id}`, { method: "GET", adminCookie: cookie }), paramsOf(created.id));
+    expect((await stillDraft.json()).status).toBe("draft");
+  });
+
+  it("publishing a video with 0 questions is allowed (plan §4.5)", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    const created = await (
+      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 60, rewardPoints: 10 }, adminCookie: cookie }))
+    ).json();
+    const res = await publishVideo(adminRequest(`${VIDEOS_URL}/${created.id}/publish`, { adminCookie: cookie }), paramsOf(created.id));
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("review round 2 MINOR 4: status transition rules", () => {
+  afterAll(() => prisma.$disconnect());
+
+  it("feature on a non-published (draft) video → 409 INVALID_TRANSITION", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    const created = await (
+      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
+    ).json();
+    const res = await featureVideo(adminRequest(`${VIDEOS_URL}/${created.id}/feature`, { adminCookie: cookie }), paramsOf(created.id));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("INVALID_TRANSITION");
+  });
+
+  it("publishing an already-published video is a no-op (documented choice) — 200, unchanged", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    const created = await (
+      await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
+    ).json();
+    const first = await publishVideo(adminRequest(`${VIDEOS_URL}/${created.id}/publish`, { adminCookie: cookie }), paramsOf(created.id));
+    const firstBody = await first.json();
+    const second = await publishVideo(adminRequest(`${VIDEOS_URL}/${created.id}/publish`, { adminCookie: cookie }), paramsOf(created.id));
+    expect(second.status).toBe(200);
+    expect((await second.json()).publishedAt).toBe(firstBody.publishedAt);
+  });
+
+  it("archiving a featured video also clears isFeatured", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    await withFeaturedSnapshotRestored(cookie, async () => {
+      const created = await (
+        await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
+      ).json();
+      await publishVideo(adminRequest(`${VIDEOS_URL}/${created.id}/publish`, { adminCookie: cookie }), paramsOf(created.id));
+      await featureVideo(adminRequest(`${VIDEOS_URL}/${created.id}/feature`, { adminCookie: cookie }), paramsOf(created.id));
+
+      const res = await archiveVideo(adminRequest(`${VIDEOS_URL}/${created.id}/archive`, { adminCookie: cookie }), paramsOf(created.id));
+      const body = await res.json();
+      expect(body.status).toBe("archived");
+      expect(body.isFeatured).toBe(false);
+    });
+  });
+});
+
+describe("review round 2 MINOR 1: AdminAuditLog", () => {
+  afterAll(() => prisma.$disconnect());
+
+  it("one mutation writes exactly one audit row, with the acting admin, action, entity and entityId", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    const youtubeId = randomYoutubeId();
+    const before = await prisma.adminAuditLog.count({ where: { action: "video.create" } });
+
+    const res = await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: youtubeId, durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }));
+    const created = await res.json();
+
+    const after = await prisma.adminAuditLog.count({ where: { action: "video.create" } });
+    expect(after).toBe(before + 1);
+
+    const row = await prisma.adminAuditLog.findFirst({ where: { action: "video.create", entityId: created.id } });
+    expect(row).toMatchObject({ adminId: admin.id, action: "video.create", entity: "video", entityId: created.id });
+    expect(JSON.parse(row!.diff!)).toMatchObject({ youtubeId, durationSec: 40, rewardPoints: 10 });
+  });
+
+  it("publish/archive/feature/update each write their own audit row", async () => {
+    const admin = await loggedInAdmin();
+    const cookie = await issueCookie(admin.id);
+    await withFeaturedSnapshotRestored(cookie, async () => {
+      const created = await (
+        await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
+      ).json();
+
+      await patchVideo(adminRequest(`${VIDEOS_URL}/${created.id}`, { method: "PATCH", body: { title: "Audited Title" }, adminCookie: cookie }), paramsOf(created.id));
+      await publishVideo(adminRequest(`${VIDEOS_URL}/${created.id}/publish`, { adminCookie: cookie }), paramsOf(created.id));
+      await featureVideo(adminRequest(`${VIDEOS_URL}/${created.id}/feature`, { adminCookie: cookie }), paramsOf(created.id));
+      await archiveVideo(adminRequest(`${VIDEOS_URL}/${created.id}/archive`, { adminCookie: cookie }), paramsOf(created.id));
+
+      const rows = await prisma.adminAuditLog.findMany({ where: { entityId: created.id }, orderBy: { createdAt: "asc" } });
+      expect(rows.map((r) => r.action)).toEqual(["video.create", "video.update", "video.publish", "video.feature", "video.archive"]);
+      expect(rows.every((r) => r.adminId === admin.id)).toBe(true);
+    });
   });
 });

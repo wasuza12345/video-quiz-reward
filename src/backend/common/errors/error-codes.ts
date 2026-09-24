@@ -21,6 +21,7 @@ export const ERROR_CODES = [
   "QUESTION_NOT_FOUND",
   "USER_NOT_FOUND",
   "SESSION_NOT_FOUND",
+  "INVALID_TRANSITION",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -44,4 +45,5 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   QUESTION_NOT_FOUND: 404,
   USER_NOT_FOUND: 404,
   SESSION_NOT_FOUND: 404,
+  INVALID_TRANSITION: 409,
 };

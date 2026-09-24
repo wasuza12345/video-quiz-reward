@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/backend/lib/prisma";
 import type { VideoStatus } from "@/backend/domain/resume-policy";
+import { auditLogEntry } from "@/backend/common/audit/audit-log";
 import type { AdminQuestionRow, AdminVideoRow, AdminVideoWithQuestions, CreateVideoInput, UpdateVideoInput, VideoRepository, VideoRow } from "./video.interface";
 
 function toRow(v: {
@@ -84,32 +86,51 @@ export function createVideoRepository(): VideoRepository {
       return result;
     },
 
-    async create(input: CreateVideoInput) {
-      const video = await prisma.video.create({
-        data: { ...input, status: "draft", isFeatured: false },
-        include: ADMIN_COUNTS,
-      });
+    async create(input: CreateVideoInput, audit) {
+      const id = randomUUID(); // generated client-side so the audit row can reference it in the same transaction
+      const [video] = await prisma.$transaction([
+        prisma.video.create({ data: { id, ...input, status: "draft", isFeatured: false }, include: ADMIN_COUNTS }),
+        auditLogEntry(audit, "video.create", "video", id, input),
+      ]);
       return toAdminRow(video);
     },
 
-    async update(id, input: UpdateVideoInput) {
-      const video = await prisma.video.update({ where: { id }, data: input, include: ADMIN_COUNTS });
+    async update(id, input: UpdateVideoInput, audit, requireUnlocked) {
+      if (requireUnlocked) {
+        // The write itself is the atomic conditional check (review round 2 MINOR 3) — not a
+        // separate probe followed by a plain update, which would leave its own small gap. A
+        // session created concurrently makes this match 0 rows instead of applying `input`.
+        const result = await prisma.video.updateMany({ where: { id, sessions: { none: {} } }, data: input });
+        if (result.count === 0) return null;
+      } else {
+        await prisma.video.update({ where: { id }, data: input });
+      }
+      const [video] = await prisma.$transaction([prisma.video.findUniqueOrThrow({ where: { id }, include: ADMIN_COUNTS }), auditLogEntry(audit, "video.update", "video", id, input)]);
       return toAdminRow(video);
     },
 
-    async setStatus(id, status) {
-      const video = await prisma.video.update({
-        where: { id },
-        data: { status, publishedAt: status === "published" ? new Date() : undefined },
-        include: ADMIN_COUNTS,
-      });
+    async setStatus(id, status, action, audit) {
+      const [video] = await prisma.$transaction([
+        prisma.video.update({
+          where: { id },
+          data: {
+            status,
+            publishedAt: status === "published" ? new Date() : undefined,
+            // Archiving retires a video from the public list entirely — it can't stay "the" featured one (review round 2 MINOR 4).
+            isFeatured: status === "archived" ? false : undefined,
+          },
+          include: ADMIN_COUNTS,
+        }),
+        auditLogEntry(audit, action, "video", id, { status }),
+      ]);
       return toAdminRow(video);
     },
 
-    async setFeatured(id) {
+    async setFeatured(id, audit) {
       const [, video] = await prisma.$transaction([
         prisma.video.updateMany({ where: { isFeatured: true, id: { not: id } }, data: { isFeatured: false } }),
         prisma.video.update({ where: { id }, data: { isFeatured: true }, include: ADMIN_COUNTS }),
+        auditLogEntry(audit, "video.feature", "video", id, { isFeatured: true }),
       ]);
       return toAdminRow(video);
     },

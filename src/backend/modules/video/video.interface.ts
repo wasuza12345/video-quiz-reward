@@ -1,4 +1,5 @@
 import type { VideoStatus } from "@/backend/domain/resume-policy";
+import type { AuditContext } from "@/backend/common/audit/audit-log";
 
 /** Internal row shape read by the repository; not the public response shape (see video.service.ts). */
 export interface VideoRow {
@@ -58,9 +59,15 @@ export interface VideoRepository {
   /** Every status, newest first (plan §5.3: the client filters by status/pageSize=100). */
   listAdmin(page: number, pageSize: number): Promise<{ items: AdminVideoRow[]; total: number }>;
   findAdminById(id: string): Promise<AdminVideoWithQuestions | null>;
-  create(input: CreateVideoInput): Promise<AdminVideoRow>;
-  update(id: string, input: UpdateVideoInput): Promise<AdminVideoRow>;
-  setStatus(id: string, status: VideoStatus): Promise<AdminVideoRow>;
+  create(input: CreateVideoInput, audit: AuditContext): Promise<AdminVideoRow>;
+  /**
+   * `requireUnlocked`: when true (the update touches youtubeUrl/durationSec — plan §7's locked
+   * set), the write is gated on a conditional `updateMany({ sessions: { none: {} } })` so a
+   * session created between the service's lock check and this write can't slip through (review
+   * round 2 MINOR 3) — `null` means the gate failed (now locked).
+   */
+  update(id: string, input: UpdateVideoInput, audit: AuditContext, requireUnlocked: boolean): Promise<AdminVideoRow | null>;
+  setStatus(id: string, status: VideoStatus, action: "video.publish" | "video.archive", audit: AuditContext): Promise<AdminVideoRow>;
   /** Sets `isFeatured` on `id` and unsets it on every other video (plan §4.4: "feature unsets the others"). */
-  setFeatured(id: string): Promise<AdminVideoRow>;
+  setFeatured(id: string, audit: AuditContext): Promise<AdminVideoRow>;
 }

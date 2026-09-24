@@ -27,10 +27,10 @@ export function createVideoController(deps: { videoService: VideoService }) {
     },
 
     async adminCreate(request: NextRequest) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
       const body = parseBody(adminCreateVideoBodySchema, await readJsonBody(request));
-      return ok(await deps.videoService.adminCreate(body));
+      return ok(await deps.videoService.adminCreate(body, admin));
     },
 
     async adminDetail(request: NextRequest, id: string) {
@@ -39,28 +39,28 @@ export function createVideoController(deps: { videoService: VideoService }) {
     },
 
     async adminUpdate(request: NextRequest, id: string) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
       const body = parseBody(adminUpdateVideoBodySchema, await readJsonBody(request));
-      return ok(await deps.videoService.adminUpdate(id, body));
+      return ok(await deps.videoService.adminUpdate(id, body, admin));
     },
 
     async adminPublish(request: NextRequest, id: string) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
-      return ok(await deps.videoService.adminPublish(id));
+      return ok(await deps.videoService.adminPublish(id, admin));
     },
 
     async adminArchive(request: NextRequest, id: string) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
-      return ok(await deps.videoService.adminArchive(id));
+      return ok(await deps.videoService.adminArchive(id, admin));
     },
 
     async adminFeature(request: NextRequest, id: string) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
-      return ok(await deps.videoService.adminFeature(id));
+      return ok(await deps.videoService.adminFeature(id, admin));
     },
   };
 }

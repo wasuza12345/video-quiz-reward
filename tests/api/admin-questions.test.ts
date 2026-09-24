@@ -284,3 +284,56 @@ describe("admin quiz question CRUD (plan §4.4/§4.5/§7)", () => {
     expect(deleteRes.status).toBe(404);
   });
 });
+
+describe("review round 2 MINOR 2: duplicate choice labels are rejected by the schema, not the DB", () => {
+  afterAll(() => prisma.$disconnect());
+
+  it("create with two choices sharing a label → 400 VALIDATION_ERROR, not 409 DUPLICATE_TRIGGER", async () => {
+    const { cookie, video } = await createUnlockedVideo(60);
+    const res = await createQuestion(
+      adminRequest(`http://t/api/admin/videos/${video.id}/questions`, {
+        body: { triggerSec: 10, prompt: "Q?", choices: [{ label: "A", text: "a" }, { label: "A", text: "a again" }], correctChoice: "A" },
+        adminCookie: cookie,
+      }),
+      paramsOf(video.id),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("update with duplicate labels → 400 VALIDATION_ERROR", async () => {
+    const { cookie, video } = await createUnlockedVideo(60);
+    const q = await (
+      await createQuestion(
+        adminRequest(`http://t/api/admin/videos/${video.id}/questions`, { body: { triggerSec: 10, prompt: "Q?", choices: CHOICES_2, correctChoice: "A" }, adminCookie: cookie }),
+        paramsOf(video.id),
+      )
+    ).json();
+    const res = await patchQuestion(
+      adminRequest(`http://t/api/admin/questions/${q.id}`, { method: "PATCH", body: { choices: [{ label: "A", text: "x" }, { label: "A", text: "y" }] }, adminCookie: cookie }),
+      paramsOf(q.id),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("review round 2 MINOR 1: AdminAuditLog for question mutations", () => {
+  afterAll(() => prisma.$disconnect());
+
+  it("create/update/delete each write exactly one audit row", async () => {
+    const { cookie, video } = await createUnlockedVideo(60);
+    const createRes = await createQuestion(
+      adminRequest(`http://t/api/admin/videos/${video.id}/questions`, { body: { triggerSec: 10, prompt: "Q?", choices: CHOICES_2, correctChoice: "A" }, adminCookie: cookie }),
+      paramsOf(video.id),
+    );
+    const q = await createRes.json();
+
+    await patchQuestion(adminRequest(`http://t/api/admin/questions/${q.id}`, { method: "PATCH", body: { prompt: "Edited?" }, adminCookie: cookie }), paramsOf(q.id));
+    await deleteQuestion(adminRequest(`http://t/api/admin/questions/${q.id}`, { method: "DELETE", adminCookie: cookie }), paramsOf(q.id));
+
+    const rows = await prisma.adminAuditLog.findMany({ where: { entityId: q.id }, orderBy: { createdAt: "asc" } });
+    expect(rows.map((r) => r.action)).toEqual(["question.create", "question.update", "question.delete"]);
+    expect(rows.every((r) => r.entity === "question")).toBe(true);
+  });
+});

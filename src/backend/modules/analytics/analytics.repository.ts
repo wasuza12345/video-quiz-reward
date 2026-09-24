@@ -43,24 +43,39 @@ function toSessionRow(s: SessionWithRelations): SessionRowData {
   };
 }
 
+/** Admin lists/details are always paged or capped (review round 2 MINOR 7) — a user's lifetime
+ * ledger/session history is unbounded, and loading all of it just to sum/count/max it in JS
+ * doesn't scale the way a DB-side aggregate does. */
+const USER_DETAIL_ROW_CAP = 100;
+
 export function createAnalyticsRepository(): AnalyticsRepository {
   return {
     async listUsers(page, pageSize) {
-      const [rows, total] = await Promise.all([
+      const [users, total] = await Promise.all([
         prisma.user.findMany({
           orderBy: { createdAt: "desc" },
           skip: (page - 1) * pageSize,
           take: pageSize,
-          include: { points: { select: { points: true } }, sessions: { select: { startedAt: true } } },
+          include: { _count: { select: { sessions: true } } },
         }),
         prisma.user.count(),
       ]);
-      const items: AdminUserListRow[] = rows.map((u) => ({
+      const userIds = users.map((u) => u.id);
+      // Two grouped aggregates over just this page's users, instead of loading every session/
+      // ledger row for them and reducing in JS (review round 2 MINOR 7).
+      const [pointsSums, lastActive] = await Promise.all([
+        prisma.pointsLedger.groupBy({ by: ["userId"], where: { userId: { in: userIds } }, _sum: { points: true } }),
+        prisma.watchSession.groupBy({ by: ["userId"], where: { userId: { in: userIds } }, _max: { startedAt: true } }),
+      ]);
+      const pointsByUser = new Map(pointsSums.map((p) => [p.userId, p._sum.points ?? 0]));
+      const lastActiveByUser = new Map(lastActive.map((s) => [s.userId, s._max.startedAt ?? null]));
+
+      const items: AdminUserListRow[] = users.map((u) => ({
         id: u.id,
         createdAt: u.createdAt,
-        totalPoints: u.points.reduce((sum, p) => sum + p.points, 0),
-        sessionCount: u.sessions.length,
-        lastActiveAt: u.sessions.length > 0 ? new Date(Math.max(...u.sessions.map((s) => s.startedAt.getTime()))) : null,
+        totalPoints: pointsByUser.get(u.id) ?? 0,
+        sessionCount: u._count.sessions,
+        lastActiveAt: lastActiveByUser.get(u.id) ?? null,
       }));
       return { items, total };
     },
@@ -69,15 +84,18 @@ export function createAnalyticsRepository(): AnalyticsRepository {
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) return null;
 
-      const [ledgerRows, sessionRows] = await Promise.all([
-        prisma.pointsLedger.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, include: { video: { select: { title: true } } } }),
-        prisma.watchSession.findMany({ where: { userId }, orderBy: { startedAt: "desc" }, include: SESSION_INCLUDE }),
+      const [totalPointsAgg, ledgerRows, sessionRows] = await Promise.all([
+        prisma.pointsLedger.aggregate({ where: { userId }, _sum: { points: true } }),
+        prisma.pointsLedger.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: USER_DETAIL_ROW_CAP, include: { video: { select: { title: true } } } }),
+        prisma.watchSession.findMany({ where: { userId }, orderBy: { startedAt: "desc" }, take: USER_DETAIL_ROW_CAP, include: SESSION_INCLUDE }),
       ]);
 
       return {
         id: user.id,
         createdAt: user.createdAt,
-        totalPoints: ledgerRows.reduce((sum, l) => sum + l.points, 0),
+        // From the aggregate, not `ledgerRows.reduce(...)` — ledgerRows is capped at 100, which
+        // would undercount a heavier user's true lifetime total.
+        totalPoints: totalPointsAgg._sum.points ?? 0,
         ledger: ledgerRows.map((l) => ({ sessionId: l.sessionId, videoId: l.videoId, videoTitle: l.video.title, points: l.points, createdAt: l.createdAt })),
         sessions: sessionRows.map(toSessionRow),
       };

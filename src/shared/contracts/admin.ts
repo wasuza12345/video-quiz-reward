@@ -51,11 +51,20 @@ export interface AdminVideoDetail extends AdminVideoListItem {
 
 const choiceLabelSchema = z.enum(["A", "B", "C", "D"]);
 const choiceInputSchema = z.object({ label: choiceLabelSchema, text: z.string().min(1).max(200) });
+// Duplicate labels would otherwise reach the DB's own @@id([questionId, label]) constraint and
+// get misreported as 409 DUPLICATE_TRIGGER (the service's P2002 handler assumes any unique-
+// constraint violation from a question write means a duplicate triggerSec) — review round 2
+// MINOR 2: catch it here instead, as an ordinary 400 VALIDATION_ERROR.
+const choicesSchema = z
+  .array(choiceInputSchema)
+  .min(2)
+  .max(4)
+  .refine((choices) => new Set(choices.map((c) => c.label)).size === choices.length, { message: "choice labels must be unique" });
 
 export const adminCreateQuestionBodySchema = z.object({
   triggerSec: z.number().finite().positive(),
   prompt: z.string().min(1).max(300),
-  choices: z.array(choiceInputSchema).min(2).max(4),
+  choices: choicesSchema,
   correctChoice: choiceLabelSchema,
 });
 export type AdminCreateQuestionBody = z.infer<typeof adminCreateQuestionBodySchema>;
@@ -63,7 +72,7 @@ export type AdminCreateQuestionBody = z.infer<typeof adminCreateQuestionBodySche
 export const adminUpdateQuestionBodySchema = z.object({
   triggerSec: z.number().finite().positive().optional(),
   prompt: z.string().min(1).max(300).optional(),
-  choices: z.array(choiceInputSchema).min(2).max(4).optional(),
+  choices: choicesSchema.optional(),
   correctChoice: choiceLabelSchema.optional(),
 });
 export type AdminUpdateQuestionBody = z.infer<typeof adminUpdateQuestionBodySchema>;

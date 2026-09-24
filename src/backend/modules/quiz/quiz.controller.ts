@@ -15,23 +15,23 @@ function requireOrigin(request: NextRequest): void {
 export function createAdminQuestionController(deps: { questionService: AdminQuestionService }) {
   return {
     async create(request: NextRequest, videoId: string) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
       const body = parseBody(adminCreateQuestionBodySchema, await readJsonBody(request));
-      return ok(await deps.questionService.create(videoId, body));
+      return ok(await deps.questionService.create(videoId, body, admin));
     },
 
     async update(request: NextRequest, questionId: string) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
       const body = parseBody(adminUpdateQuestionBodySchema, await readJsonBody(request));
-      return ok(await deps.questionService.update(questionId, body));
+      return ok(await deps.questionService.update(questionId, body, admin));
     },
 
     async remove(request: NextRequest, questionId: string) {
-      await requireAdmin(request);
+      const admin = await requireAdmin(request);
       requireOrigin(request);
-      await deps.questionService.delete(questionId);
+      await deps.questionService.delete(questionId, admin);
       return ok({});
     },
   };

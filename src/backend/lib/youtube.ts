@@ -43,7 +43,8 @@ export async function fetchYoutubeOembed(youtubeId: string): Promise<YoutubeOemb
   const watchUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
   const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`;
   try {
-    const res = await fetch(oembedUrl);
+    // A slow/hanging oEmbed response must not hold an admin request open indefinitely (review round 2 MINOR 5).
+    const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
     const data = (await res.json()) as { title?: unknown; author_name?: unknown };
     if (typeof data.title !== "string" || typeof data.author_name !== "string") return null;
