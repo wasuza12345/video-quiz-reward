@@ -85,15 +85,41 @@ describe("POST /api/sessions/:id/events", () => {
     expect((await res.json()).error.code).toBe("BODY_TOO_LARGE");
   });
 
-  it("429 EVENT_LIMIT when the session's 2000-event cap would be exceeded", async () => {
+  it("429 EVENT_LIMIT when the session's 2000-event floor would be exceeded (short video)", async () => {
     const userId = newUserId();
-    const { sessionId } = await createSession(userId);
+    const { sessionId } = await createSession(userId); // default durationSec 44 → cap floor 2000
     await prisma.watchSession.update({ where: { id: sessionId }, data: { eventCount: 1995 } });
 
     const events = Array.from({ length: 10 }, (_, i) => ({ seq: i + 1, type: "TICK", positionSec: i }));
     const res = await postEvents(postJson(`http://t/api/sessions/${sessionId}/events`, { events }, { userId }), paramsOf(sessionId));
     expect(res.status).toBe(429);
     expect((await res.json()).error.code).toBe("EVENT_LIMIT");
+  });
+
+  it("the cap scales with duration for long videos: max(2000, ceil(durationSec × 3))", async () => {
+    const userId = newUserId();
+    const { sessionId } = await createSession(userId, (await createTestVideo({ durationSec: 2000 })).id); // cap = 6000
+    await prisma.watchSession.update({ where: { id: sessionId }, data: { eventCount: 5995 } });
+
+    const under = Array.from({ length: 5 }, (_, i) => ({ seq: i + 1, type: "TICK", positionSec: i })); // 5995+5=6000, at the cap
+    const okRes = await postEvents(postJson(`http://t/api/sessions/${sessionId}/events`, { events: under }, { userId }), paramsOf(sessionId));
+    expect(okRes.status).toBe(200);
+
+    const over = [{ seq: 6, type: "TICK", positionSec: 6 }]; // 6000+1=6001, over the cap
+    const capRes = await postEvents(postJson(`http://t/api/sessions/${sessionId}/events`, { events: over }, { userId }), paramsOf(sessionId));
+    expect(capRes.status).toBe(429);
+    expect((await capRes.json()).error.code).toBe("EVENT_LIMIT");
+  });
+
+  it("a pure retry (all seqs already stored) is exempt from the event cap", async () => {
+    const userId = newUserId();
+    const { sessionId } = await createSession(userId);
+    const batch = { events: [{ seq: 1, type: "PLAY", positionSec: 0 }] };
+    await postEvents(postJson(`http://t/api/sessions/${sessionId}/events`, batch, { userId }), paramsOf(sessionId));
+    await prisma.watchSession.update({ where: { id: sessionId }, data: { eventCount: 2000 } }); // already at the cap
+
+    const res = await postEvents(postJson(`http://t/api/sessions/${sessionId}/events`, batch, { userId }), paramsOf(sessionId));
+    expect(res.status).toBe(200); // retry of seq 1 only — no new events, cap never checked
   });
 
   it("409 SEQ_CONFLICT when a stale seq doesn't match what's stored, with recovery fields", async () => {

@@ -46,9 +46,12 @@ export const TOLERANCES = {
   SOFT_REJECT_FLAG_AT: 3,
 } as const;
 
-/** POST /api/sessions/:id/events caps (plan §4.2). */
+/** POST /api/sessions/:id/events caps (plan §4.2, §10). */
 export const EVENT_CAPS = {
   MAX_EVENTS_PER_REQUEST: 20,
+  /** Floor for the per-session cap — the actual cap is max(this, ceil(durationSec × EVENTS_PER_DURATION_SEC)),
+   * so a long video's honest 1-tick-per-second traffic can still finish it. */
   MAX_EVENTS_PER_SESSION: 2000,
+  EVENTS_PER_DURATION_SEC: 3,
   MAX_BODY_BYTES: 16 * 1024,
 } as const;

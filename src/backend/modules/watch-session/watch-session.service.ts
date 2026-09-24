@@ -74,6 +74,11 @@ function parseClientAt(raw: string | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** max(floor, ceil(durationSec × rate)) — plan §10: long videos must stay finishable. */
+function sessionEventCap(durationSec: number): number {
+  return Math.max(EVENT_CAPS.MAX_EVENTS_PER_SESSION, Math.ceil(durationSec * EVENT_CAPS.EVENTS_PER_DURATION_SEC));
+}
+
 export interface WatchSessionService {
   createOrResume(userId: string, videoId: string): Promise<SessionCreateResult>;
   applyEvents(sessionId: string, userId: string, events: EventInputBody[]): Promise<EventsApplyResult>;
@@ -92,17 +97,24 @@ export function createWatchSessionService(deps: {
     return row;
   }
 
-  /** Resume rule 4: a PLAYING session becomes PAUSED, recorded as a RESUME audit row. */
+  /**
+   * Resume rule 4: a PLAYING session becomes PAUSED, recorded as a RESUME audit row. Retried
+   * once against the fresh row on a lost CAS race, so a PLAYING row never comes back unconverted
+   * (mirrors /answer's retry — no conflict code is documented for this path either).
+   */
   async function resumeSession(sessionId: string): Promise<SessionRow> {
-    const row = await deps.sessionRepo.findById(sessionId);
+    let row = await deps.sessionRepo.findById(sessionId);
     if (!row) throw new Error(`resume target session ${sessionId} vanished`);
-    const { session: nextSnapshot, event } = applyResume(row);
-    if (!event) return row; // benign: nothing to do unless it was PLAYING
-    const result = await deps.sessionRepo.casUpdate(sessionId, row.version, nextSnapshot, { lastSeq: row.lastSeq, eventCountDelta: 0 }, [
-      { ...event, clientAt: null },
-    ]);
-    // Losing this rare race only loses the RESUME audit row, never the state (plan §4.2).
-    return result.applied ? { ...row, ...nextSnapshot, version: row.version + 1 } : result.current;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { session: nextSnapshot, event } = applyResume(row);
+      if (!event) return row; // benign: nothing to do unless it was PLAYING
+      const result = await deps.sessionRepo.casUpdate(sessionId, row.version, nextSnapshot, { lastSeq: row.lastSeq, eventCountDelta: 0 }, [
+        { ...event, clientAt: null },
+      ]);
+      if (result.applied) return { ...row, ...nextSnapshot, version: row.version + 1 };
+      row = result.current; // retry once against the fresh row (still might be PLAYING)
+    }
+    throw new Error(`could not apply RESUME for session ${sessionId} after retries`);
   }
 
   return {
@@ -137,9 +149,6 @@ export function createWatchSessionService(deps: {
 
     async applyEvents(sessionId, userId, events) {
       const row = await loadOwned(sessionId, userId);
-      if (row.eventCount + events.length > EVENT_CAPS.MAX_EVENTS_PER_SESSION) {
-        throw new AppError("EVENT_LIMIT", "session has reached its event cap");
-      }
 
       // A prefix of the batch may be a retry of an already-accepted request (network loss on
       // the previous response): seqs are validated strictly increasing, so once we see one
@@ -174,6 +183,13 @@ export function createWatchSessionService(deps: {
 
       const video = await deps.videoRepo.findById(row.videoId);
       if (!video) throw new AppError("VIDEO_NOT_FOUND", "video not found");
+
+      // The cap applies only to genuinely new events (plan §10) — a retried batch (handled
+      // above) never counts against it twice.
+      if (row.eventCount + newEvents.length > sessionEventCap(video.durationSec)) {
+        throw new AppError("EVENT_LIMIT", "session has reached its event cap");
+      }
+
       const questions = await deps.quizRepo.listForVideo(row.videoId);
       const domainEvents: ClientEvent[] = newEvents.map((e) => ({ seq: e.seq, type: e.type, positionSec: e.positionSec }));
 
@@ -215,18 +231,23 @@ export function createWatchSessionService(deps: {
       const question = await deps.quizRepo.findForAnswer(questionId);
       if (!question || question.videoId !== first.videoId) throw new AppError("NOT_AT_QUIZ", "not waiting on this question");
 
+      const video = await deps.videoRepo.findById(first.videoId);
+      if (!video) throw new AppError("VIDEO_NOT_FOUND", "video not found");
+      const cap = sessionEventCap(video.durationSec);
+
       // No conflict code is documented for this endpoint (plan §4.1) — a lost CAS race here is
       // rare (some other write landing between our read and write) and is retried server-side
       // against the fresh row, rather than surfacing an error code the client can't handle.
       let row = first;
       for (let attempt = 0; attempt < 3; attempt++) {
+        if (row.eventCount + 1 > cap) throw new AppError("EVENT_LIMIT", "session has reached its event cap");
         const result = applyAnswerDomain(row, question, choice);
         if (!result.ok) {
           throw result.code === "INVALID_CHOICE"
             ? new AppError("INVALID_CHOICE", "unknown choice label")
             : new AppError("NOT_AT_QUIZ", "not waiting on this question");
         }
-        const write = await deps.sessionRepo.casUpdate(sessionId, row.version, result.session, { lastSeq: row.lastSeq, eventCountDelta: 0 }, [
+        const write = await deps.sessionRepo.casUpdate(sessionId, row.version, result.session, { lastSeq: row.lastSeq, eventCountDelta: 1 }, [
           { ...result.event, clientAt: null },
         ]);
         if (write.applied) return { correct: result.correct, state: result.session.state };

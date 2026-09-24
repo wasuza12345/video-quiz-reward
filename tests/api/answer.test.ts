@@ -32,10 +32,23 @@ describe("POST /api/sessions/:id/answer", () => {
     const row = await prisma.watchSession.findUniqueOrThrow({ where: { id: sessionId } });
     expect(JSON.parse(row.passedQuestionIds)).toEqual([question.id]);
     expect(row.currentQuestionId).toBeNull();
+    expect(row.eventCount).toBe(1); // answer counts toward the session's event cap (plan §10)
 
     const auditRow = await prisma.watchEvent.findFirst({ where: { sessionId, type: "ANSWER" } });
     expect(auditRow).toMatchObject({ seq: null, accepted: true, fromState: "QUIZ_PENDING", toState: "PAUSED" });
     expect(JSON.parse(auditRow!.payload!)).toEqual({ questionId: question.id, choice: "D", correct: true });
+  });
+
+  it("429 EVENT_LIMIT when the session is already at its event cap", async () => {
+    const video = await createTestVideo();
+    const question = await createTestQuestion(video.id, 13);
+    const userId = newUserId();
+    const sessionId = await createQuizPendingSession(userId, video.id, question.id);
+    await prisma.watchSession.update({ where: { id: sessionId }, data: { eventCount: 2000 } });
+
+    const res = await postAnswer(postJson(`http://t/api/sessions/${sessionId}/answer`, { questionId: question.id, choice: "D" }, { userId }), paramsOf(sessionId));
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe("EVENT_LIMIT");
   });
 
   it("wrong choice → correct:false, session stays QUIZ_PENDING", async () => {

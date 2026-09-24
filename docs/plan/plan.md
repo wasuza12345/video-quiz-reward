@@ -454,6 +454,14 @@ the reducer reconciles to it: 409 or rejected progress → adopt server `positio
 | P7 | Code review (correctness/security/requirements) + clean-code | reviewer, clean-code | 0 BLOCKER, 0 MAJOR |
 | P8 | GitHub + Vercel + Turso env + smoke on real URL (phone + desktop) | coder (+ human for accounts) | `/` shows brief video → quiz → +50 → refresh keeps 50; admin login works |
 
+### P6 must also cover proxy.ts (from P3 review)
+1. First visit `/` → Set-Cookie `vq_uid` HttpOnly, Secure, SameSite=Lax, Max-Age≈31536000, Path=/.
+2. First-ever request = POST `/api/sessions` without cookie → 200 in the same request.
+3. Valid cookie → no re-issue. 4. Tampered signature → new id; old session's events → 403 NOT_OWNER.
+5. Matcher: `/watch/x`, `/api/*` get the cookie; `/_next/static/*` does not. 6. Refresh on /watch keeps id, points, resume.
+7. `/admin/*` placeholder test that P5a must flip to 401/redirect. 8. `Secure` on http://localhost: Chromium OK; WebKit needs https or skip.
+- Event cap = `max(2000, ceil(durationSec × 3))` (long videos must stay finishable); `/answer` counts toward it.
+
 ## 11. Decisions (all closed 2026-09-24)
 - **D1 prod DB:** Turso + Prisma libsql adapter (Vercel Marketplace `tursocloud/database`).
 - **D2 identity:** anonymous signed cookie UUID (`vq_uid`), no login for learners.
