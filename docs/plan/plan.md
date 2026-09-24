@@ -1,9 +1,9 @@
 # Plan — Mini Interactive Video Quiz & Reward
 
-Status: DRAFT v5.1 (planner, 2026-09-24). No coding started. Human decisions so far:
+Status: v5.2 (planner, 2026-09-24) — in build (P0–P2 done). Human decisions so far:
 structure = Option A · DB = SQLite + Prisma · server timeline + state machine · backoffice ·
 D4 = admin table + bcrypt + signed cookie · D5 = `/` list (featured brief video) → `/watch/[videoId]` ·
-design ref = engonair.com, font LINE Seed Sans TH (OFL 1.1, self-host), **no EngOnAir logo**, copy voice = ครูหวาน ("ค่ะ/นะคะ").
+APP_NAME = "ดูคลิป รับแต้ม" · design ref = engonair.com, font LINE Seed Sans TH (OFL 1.1, self-host), **no EngOnAir logo**, copy voice = ครูหวาน ("ค่ะ/นะคะ").
 D1–D3 closed (§11): Turso · signed anonymous cookie · resume paused.
 
 Changelog:
@@ -197,7 +197,7 @@ model WatchSession {
   positionSec       Float         @default(0)             // last accepted position (TICK / SEEK back only)
   furthestSec       Float         @default(0)             // max accepted TICK position; watched = [0, furthestSec]
   playedWallSec     Float         @default(0)             // server wall time spent in PLAYING (canEnd only)
-  bankSec           Float         @default(3)             // token bucket for progress past furthestSec (§6), max 6
+  bankSec           Float         @default(3)             // token bucket for progress past furthestSec (§6), max 10
   lastPlayingAt     DateTime?                             // serverAt when PLAYING credit was last taken; null if not PLAYING
   lastSeq           Int           @default(0)             // highest client seq accepted
   version           Int           @default(0)             // CAS guard, bumped by EVERY session write (§4.2)
@@ -315,7 +315,25 @@ All JSON. Errors: `{ error: { code, message, ...extra } }`. Bad body → 400 `VA
 | POST `/api/admin/videos/:id/{publish,archive,feature}` | status / featured (feature unsets the others) |
 | POST `/api/admin/videos/:id/questions` · PATCH/DELETE `/api/admin/questions/:id` | quiz CRUD incl. choices |
 | GET `/api/admin/users[/:id]` · `/api/admin/sessions[?videoId&flagged]` · `/api/admin/sessions/:id` · `/api/admin/stats` | read-only |
-Errors: 401 UNAUTHENTICATED · 403 BAD_ORIGIN · 409 VIDEO_LOCKED · 422 INVALID_TRIGGER.
+Errors: 401 UNAUTHENTICATED · 403 BAD_ORIGIN · 409 VIDEO_LOCKED · 409 DUPLICATE_TRIGGER · 422 INVALID_TRIGGER.
+
+### 4.5 Response shapes closed for the design spec (spec §9, 2026-09-24)
+- GET `/api/videos` items also carry `questionCount`.
+- Admin video (list item + detail): `{ id, youtubeId, title, channelName, durationSec, rewardPoints, status, isFeatured,
+  publishedAt, questionCount, sessionCount, locked }` (`locked = sessionCount > 0`); detail adds `questions:[{ id, triggerSec, prompt,
+  correctChoice, choices:[{label,text}] }]`.
+- `rewardPoints`: integer 1–1000. Once locked, adding/removing a **choice** is locked too (labels drive `correctChoice`); text stays editable.
+- Duplicate `triggerSec` → 409 `DUPLICATE_TRIGGER`. Publishing a video with 0 questions is allowed (UI shows a warning).
+- GET `/api/admin/stats?videoId` → `{ views, completions, pointsAwarded, flaggedSessions }`
+  (views = non-replay sessions, completions = ledger rows, pointsAwarded = Σ ledger points).
+- Paging for admin lists: `?page=1&pageSize=20` (max 100) → `{ items, page, pageSize, total }`.
+- GET `/api/admin/users` items: `{ id, createdAt, totalPoints, sessionCount, lastActiveAt }`;
+  `/api/admin/users/:id` → `{ user:{ id, createdAt, totalPoints }, ledger:[{ sessionId, videoId, videoTitle, points, createdAt }], sessions:[SessionRow] }`.
+- GET `/api/admin/sessions?videoId&flagged&page&pageSize` items = SessionRow:
+  `{ id, userId, videoId, videoTitle, state, flagged, isReplay, furthestSec, durationSec, playedWallSec, pointsAwarded, startedAt, endedAt }`.
+- GET `/api/admin/sessions/:id` → `{ session: SessionRow + { positionSec, bankSec, softRejectCount, passedQuestionIds,
+  currentQuestionId, questionCount, lastSeq, version, eventCount }, events:[{ id, seq, type, positionSec, clientAt, serverAt, accepted,
+  rejectReason, fromState, toState, payload }] }` ordered by `serverAt, id` (≤ 2000 by cap, no paging).
 
 ## 5. Server state machine (`backend/domain/session-state-machine.ts`)
 States: `CREATED · PLAYING · PAUSED · QUIZ_PENDING · ENDED` (rewarded = ledger row exists).
@@ -360,21 +378,28 @@ anything else (e.g. `SPEED_EXCEEDED` after a stall), the client closes the modal
 Per event, in this order (P2 tests pin it): **(1) credit, then (2) bucket check, then (3) quiz gate.**
 1. **Play-time credit** — for every accepted event whose `fromState == PLAYING` (incl. PAUSE, TAB_HIDDEN and the TICK that
    enters QUIZ_PENDING): `Δ = min(serverAt − lastPlayingAt, 10)`; `playedWallSec += Δ`;
-   `bankSec = min(bankSec + Δ × 1.1, 6)`; then `lastPlayingAt = serverAt` (or `null` when leaving PLAYING).
+   `bankSec = min(bankSec + Δ × 1.1, 10)`; then `lastPlayingAt = serverAt` (or `null` when leaving PLAYING).
    RESUME never credits. Events in one batch share `serverAt`, so a batch adds no extra credit.
 2. **Token bucket (fixes fast-forward / playbackRate / forged batches / banking by rewatch or idle):**
    a TICK to `pos > furthestSec` needs `need = pos − furthestSec`:
-   `pos > furthestSec + 1.5` → `SEEK_FORWARD`; `need > bankSec` → `SPEED_EXCEEDED`; else accept and `bankSec −= need`.
-   Positions ≤ `furthestSec` (rewatching) are accepted and cost nothing. The bank starts at 3 s and never exceeds 6 s
-   (enough for 5 s TICK flushes at 1.1×), so rewatching or idling can pre-pay at most 6 s of skip.
+   `need ≤ bankSec` → accept, `bankSec −= need` (absorbs honest jank, e.g. a 1.6 s TICK gap on a busy phone);
+   `need > 10` (larger than the bank can ever hold) → `SEEK_FORWARD` (flagged); otherwise → `SPEED_EXCEEDED` (soft).
+   The +1.5 s slack applies to explicit **SEEK** events only (§5). A 2× player drains the bank in ≈7 s, then collects
+   soft rejects → flagged at 3. (v5.2, planner decision after P2 heads-up.)
+   At the quiz gate the cost is `min(pos, triggerSec) − furthestSec` (clamped position).
+   Positions must be finite and within `[0, durationSec + 5]` (zod in P3 + assert in the domain).
+   Client sends positions **unrounded** (or floored) and uses the same `≥ triggerSec` comparison as the server; the reducer
+   opens the quiz whenever the server state is QUIZ_PENDING. A TICK in PAUSED/CREATED is `accepted` but does not move position.
+   Positions ≤ `furthestSec` (rewatching) are accepted and cost nothing. The bank starts at 3 s and never exceeds 10 s
+   (6 s was too tight under mobile arrival jitter — P2 review MINOR 1), so rewatching or idling can pre-pay at most 10 s of skip.
 3. **Quiz gate:** a TICK past the next unpassed `triggerSec` is clamped to it and moves to QUIZ_PENDING.
 4. **canEnd:** every question id in `passedQuestionIds` AND `furthestSec ≥ durationSec − 2` AND `playedWallSec ≥ durationSec × 0.9`.
    (No `startedAt` check — play time is measured, not session age.)
 
 Result: to earn points, the server must observe ≈ 0.9 × duration of real PLAYING time, and new ground is never covered
-faster than 1.1× beyond a ≤ 6 s bank.
+faster than 1.1× beyond a ≤ 10 s bank.
 **Accepted limits:** (a) a script that sends events at 1× real time is indistinguishable from a viewer — it still has to wait
-the full video; (b) a single forward skip of ≤ 6 s (the bank) is tolerated; canEnd still needs 0.9 × duration of PLAYING time.
+the full video; (b) a single forward skip of ≤ 10 s (the bank) is tolerated; canEnd still needs 0.9 × duration of PLAYING time.
 
 ## 7. Backoffice rules
 - **Admin session:** `vq_admin` = JWT (`jose`, HS256, `ADMIN_SESSION_SECRET` ≥ 32 bytes) with `{ adminId, tokenVersion }`, 8 h,
@@ -405,7 +430,16 @@ the reducer reconciles to it: 409 or rejected progress → adopt server `positio
 - Seed prod once, secrets from a git-ignored env file (never inline in shell history):
   `vercel env pull .env.production.local` → `node --env-file=.env.production.local --import tsx prisma/seed.ts` (idempotent upserts).
 - Put the Turso DB in the same region as the Vercel functions; services avoid interactive transactions (batch writes, §4.2).
-- Env: `DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `ADMIN_SESSION_SECRET`, `USER_COOKIE_SECRET` (+ seed-only `ADMIN_EMAIL/PASSWORD`).
+- Env (provisioned 2026-09-24: Turso `video-quiz-reward-db` via Marketplace, Vercel project `wasucodes-projects/video-quiz-reward`):
+  runtime uses `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` when set (Vercel injects both into Production/Preview/Development),
+  otherwise local `DATABASE_URL=file:./dev.db`; plus `ADMIN_SESSION_SECRET`, `USER_COOKIE_SECRET` (+ seed-only `ADMIN_EMAIL/PASSWORD`).
+- As built (P1, dc74df0): Prisma **7.10.0** pinned (8.x is RC) with `generator client { provider = "prisma-client", output = "../src/generated/prisma" }`;
+  `migrate deploy` works on `file:` only, so Turso migrations run via `scripts/db-deploy.sh` → `scripts/db-deploy-libsql.mjs`
+  (@libsql/client, one write batch per migration, tracked in `_db_deploy_migrations`; token never in argv).
+- Local guard: the app uses Turso only when `VERCEL=1` (set by Vercel) or `ALLOW_TURSO=1` (deploy/seed scripts), so `npm run dev`
+  with `.env.local` stays on the file DB.
+- ⚠️ One Turso DB is shared by all Vercel environments → it is effectively **prod**. Migrations + seed may target it
+  (pre-launch, empty); automated tests must **never** use Turso — local file DBs only.
 
 ## 10. Phases, owners, acceptance
 | # | Phase | Owner | Acceptance |

@@ -8,10 +8,12 @@ roles:
     prompt: designer.md
   coder:          # Next.js, Backend, SQLite, CI/CD
     agent: claude
+    model: sonnet   # human request 2026-09-24: save tokens
     prompt: coder.md
   tester:         # Quiz, ดูจนจบ, กันกรอข้าม, คะแนน, รีเฟรช
     # All roles run on claude (human request 2026-09-24).
     agent: claude
+    model: sonnet   # human request 2026-09-24: save tokens
     prompt: tester.md
   reviewer:       # โค้ด ความปลอดภัย ความตรงตามโจทย์
     agent: claude

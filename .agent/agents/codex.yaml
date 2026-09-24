@@ -1,4 +1,5 @@
 id: codex
 kind: codex
 # model: gpt-5-codex
-# args: ["--search"]
+# Bypass requested explicitly by the human (2026-09-24). Works in its own git worktree (see coder-codex role).
+# args: ["--dangerously-bypass-approvals-and-sandbox"]   # removed 2026-09-24: codex role dropped (did not accept input, weekly limit <10%)
