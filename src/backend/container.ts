@@ -13,6 +13,9 @@ import { createWatchSessionService } from "./modules/watch-session/watch-session
 import { createRewardController } from "./modules/reward/reward.controller";
 import { createRewardRepository } from "./modules/reward/reward.repository";
 import { createRewardService } from "./modules/reward/reward.service";
+import { createAdminAuthController } from "./modules/admin-auth/admin-auth.controller";
+import { createAdminAuthRepository } from "./modules/admin-auth/admin-auth.repository";
+import { createAdminAuthService } from "./modules/admin-auth/admin-auth.service";
 
 export function createContainer() {
   const userRepo = createUserRepository();
@@ -20,17 +23,20 @@ export function createContainer() {
   const quizRepo = createQuizRepository();
   const sessionRepo = createWatchSessionRepository();
   const rewardRepo = createRewardRepository();
+  const adminAuthRepo = createAdminAuthRepository();
 
   const userService = createUserService({ rewardRepo });
   const videoService = createVideoService({ videoRepo, rewardRepo });
   const watchSessionService = createWatchSessionService({ sessionRepo, videoRepo, quizRepo, userRepo });
   const rewardService = createRewardService({ rewardRepo, sessionRepo, videoRepo });
+  const adminAuthService = createAdminAuthService({ adminAuthRepo });
 
   return {
     userController: createUserController({ userService }),
     videoController: createVideoController({ videoService }),
     watchSessionController: createWatchSessionController({ watchSessionService }),
     rewardController: createRewardController({ rewardService }),
+    adminAuthController: createAdminAuthController({ adminAuthService }),
   };
 }
 

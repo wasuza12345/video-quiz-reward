@@ -10,6 +10,14 @@ export const ERROR_CODES = [
   "INVALID_CHOICE",
   "NOT_AT_QUIZ",
   "NOT_ENDED",
+  // ---------- admin (plan §4.4) ----------
+  "UNAUTHENTICATED",
+  "BAD_ORIGIN",
+  "INVALID_CREDENTIALS",
+  "TOO_MANY_ATTEMPTS",
+  "VIDEO_LOCKED",
+  "DUPLICATE_TRIGGER",
+  "INVALID_TRIGGER",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -23,4 +31,11 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   INVALID_CHOICE: 400,
   NOT_AT_QUIZ: 409,
   NOT_ENDED: 422,
+  UNAUTHENTICATED: 401,
+  BAD_ORIGIN: 403,
+  INVALID_CREDENTIALS: 401,
+  TOO_MANY_ATTEMPTS: 429,
+  VIDEO_LOCKED: 409,
+  DUPLICATE_TRIGGER: 409,
+  INVALID_TRIGGER: 422,
 };

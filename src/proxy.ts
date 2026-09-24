@@ -1,8 +1,9 @@
 // Proxy (renamed from Middleware in Next 16 — see node_modules/next/dist/docs/01-app/…/proxy.md).
 // Issues the signed anonymous identity cookie (plan §4.1, D2) on every public/API request, and
-// is the single choke point for the admin route guard (plan §7 — stub until P5a).
+// is the early-reject choke point for the admin route guard (plan §7).
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/backend/common/auth/admin-session";
 import { issueUserCookieValue, USER_COOKIE_MAX_AGE_SECONDS, USER_COOKIE_NAME, verifyUserCookieValue } from "@/backend/common/auth/user-cookie";
 
 const ADMIN_LOGIN_PATHS = new Set(["/admin/login", "/api/admin/auth/login"]);
@@ -12,17 +13,23 @@ function isGuardedAdminPath(pathname: string): boolean {
 }
 
 /**
- * TODO(P5a): verify the `vq_admin` JWT + `tokenVersion` here (plan §7) and return a redirect/401
- * when it's missing or invalid. Until then this is a deliberate no-op — admin routes are NOT
- * protected by the proxy yet; do not deploy admin UI/API ahead of P5a landing.
+ * JWT signature + expiry only (no DB tokenVersion check — that needs a DB read and stays the
+ * job of `requireAdmin()` inside every admin controller, which must never be skippable via this
+ * layer alone, plan §7). A page path (`/admin/*`) redirects to login; an API path (`/api/admin/*`)
+ * gets a 401 JSON body matching the documented error shape.
  */
-function adminGuardStub(): NextResponse | null {
-  return null;
+async function adminGuard(request: NextRequest): Promise<NextResponse | null> {
+  if (await verifyAdminCookie(request.cookies.get(ADMIN_COOKIE_NAME)?.value)) return null;
+
+  if (request.nextUrl.pathname.startsWith("/api/admin")) {
+    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "admin session missing or invalid" } }, { status: 401 });
+  }
+  return NextResponse.redirect(new URL("/admin/login", request.url));
 }
 
-export function proxy(request: NextRequest): NextResponse {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (isGuardedAdminPath(request.nextUrl.pathname)) {
-    const blocked = adminGuardStub();
+    const blocked = await adminGuard(request);
     if (blocked) return blocked;
   }
 

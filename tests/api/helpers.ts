@@ -2,7 +2,9 @@
 // against the (local file DB) prisma client — the same one the routes under test use.
 import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
+import { ADMIN_COOKIE_NAME } from "@/backend/common/auth/admin-session";
 import { issueUserCookieValue, USER_COOKIE_NAME } from "@/backend/common/auth/user-cookie";
+import { hashPassword } from "@/backend/lib/password";
 import { prisma } from "@/backend/lib/prisma";
 
 export function newUserId(): string {
@@ -54,6 +56,40 @@ export async function createTestVideo(overrides: Partial<{
       publishedAt: new Date(),
       ...overrides,
     },
+  });
+}
+
+export async function createTestAdmin(overrides: Partial<{ email: string; password: string }> = {}) {
+  const email = (overrides.email ?? `admin-${randomUUID()}@test.local`).toLowerCase();
+  const password = overrides.password ?? "correct horse battery staple";
+  const admin = await prisma.admin.create({ data: { email, passwordHash: await hashPassword(password) } });
+  return { ...admin, password };
+}
+
+interface AdminRequestInit {
+  method?: string;
+  body?: unknown;
+  /** Omit to auto-match the URL's own origin (the "valid" case); pass a string for a mismatch;
+   * pass `null` to omit the header entirely (also invalid — origin-check treats missing as bad). */
+  origin?: string | null;
+  adminCookie?: string;
+  ip?: string;
+}
+
+/** A NextRequest for `/api/admin/**`, with `Host`/`Origin` wired for `checkOrigin` and, optionally,
+ * a `vq_admin` cookie for `requireAdmin` — everything the admin-auth layer reads from a real request. */
+export function adminRequest(url: string, init: AdminRequestInit = {}): NextRequest {
+  const u = new URL(url);
+  const headers = new Headers();
+  headers.set("host", u.host);
+  if (init.origin !== null) headers.set("origin", init.origin ?? u.origin);
+  if (init.adminCookie) headers.set("cookie", `${ADMIN_COOKIE_NAME}=${init.adminCookie}`);
+  if (init.ip) headers.set("x-real-ip", init.ip);
+  if (init.body !== undefined) headers.set("content-type", "application/json");
+  return new NextRequest(url, {
+    method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
+    headers,
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
 }
 
