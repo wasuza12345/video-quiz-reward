@@ -15,6 +15,9 @@ export type WatchAction =
   | { type: "QUIZ_GATE_HIT"; questionId: string }
   // The write response for the gate TICK: server state tells us whether the gate really opened.
   | { type: "GATE_TICK_RESULT"; state: SessionState; positionSec: number; furthestSec: number }
+  // Dispatched on every ACCEPTED events response (plan §8) — this is the only thing that ever
+  // advances positionSec/furthestSec in normal (non-error) operation; without it they never move.
+  | { type: "EVENTS_SYNCED"; state: SessionState; positionSec: number; furthestSec: number; currentQuestionId: string | null }
   | { type: "PROGRESS_REJECTED"; positionSec: number; furthestSec: number; jumpSec: number }
   | { type: "SEQ_CONFLICT"; state: SessionState; positionSec: number; furthestSec: number }
   | { type: "CLIENT_SEEK_GUARD"; furthestSec: number }

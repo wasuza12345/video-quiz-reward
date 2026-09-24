@@ -209,6 +209,16 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
       };
     }
 
+    case "EVENTS_SYNCED": {
+      const base = { ...state, serverState: action.state, positionSec: action.positionSec, furthestSec: action.furthestSec };
+      // The server can reach QUIZ_PENDING via an ordinary TICK flush too (not only the dedicated
+      // gate-hit TICK+PAUSE) — if we're still showing "playing" when that happens, open the quiz.
+      if (action.state === "QUIZ_PENDING" && state.status === "playing") {
+        return { ...base, status: "quiz_open", quizPhase: "ready", currentQuestionId: action.currentQuestionId };
+      }
+      return base;
+    }
+
     case "PROGRESS_REJECTED":
       return {
         ...state,

@@ -33,16 +33,19 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-function postJson<T>(url: string, body: unknown): Promise<T> {
-  return request<T>(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+function postJson<T>(url: string, body: unknown, opts?: { keepalive?: boolean }): Promise<T> {
+  return request<T>(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: opts?.keepalive });
 }
 
 export const api = {
   getMe: () => request<MeResponse>("/api/me"),
   getVideos: () => request<VideoListResponse>("/api/videos"),
   createSession: (videoId: string) => postJson<SessionCreateResponse>("/api/sessions", { videoId }),
-  postEvents: (sessionId: string, events: Array<{ seq: number; type: ClientEventType; positionSec: number; clientAt?: string }>) =>
-    postJson<EventsApplyResponse>(`/api/sessions/${sessionId}/events`, { events }),
+  postEvents: (
+    sessionId: string,
+    events: Array<{ seq: number; type: ClientEventType; positionSec: number; clientAt?: string }>,
+    opts?: { keepalive?: boolean },
+  ) => postJson<EventsApplyResponse>(`/api/sessions/${sessionId}/events`, { events }, opts),
   postAnswer: (sessionId: string, questionId: string, choice: string) =>
     postJson<AnswerResponse>(`/api/sessions/${sessionId}/answer`, { questionId, choice }),
   postClaim: (sessionId: string) => postJson<ClaimResponse>(`/api/sessions/${sessionId}/claim`, {}),

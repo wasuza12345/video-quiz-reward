@@ -18,7 +18,8 @@ export interface SeqConflictInfo {
 }
 
 export type PostEventsResult = { ok: true; result: EventsApplyResponse } | { ok: false; conflict: SeqConflictInfo };
-export type PostEventsFn = (events: QueuedEvent[]) => Promise<PostEventsResult>;
+export type PostOpts = { keepalive?: boolean };
+export type PostEventsFn = (events: QueuedEvent[], opts?: PostOpts) => Promise<PostEventsResult>;
 
 export type FlushOutcome = { kind: "ok"; result: EventsApplyResponse } | { kind: "conflict"; conflict: SeqConflictInfo } | { kind: "error" };
 
@@ -29,13 +30,20 @@ export type FlushOutcome = { kind: "ok"; result: EventsApplyResponse } | { kind:
  * are only ever sent by the caller's own periodic flush (queueTick never sends by itself).
  */
 export class SessionWriter {
-  private nextSeq = 1;
+  private nextSeq: number;
   private queue: QueuedEvent[] = [];
   private locked = false;
   private waiters: Array<() => void> = [];
   private currentPlayState: "PLAY" | "PAUSE" = "PAUSE";
 
-  constructor(private readonly post: PostEventsFn) {}
+  /** `initialLastSeq` resumes the counter past a session's already-confirmed seq (e.g. after a
+   * refresh) so the first write doesn't restart at 1 and collide with stored events (MAJOR 1). */
+  constructor(
+    private readonly post: PostEventsFn,
+    initialLastSeq = 0,
+  ) {
+    this.nextSeq = initialLastSeq + 1;
+  }
 
   get pendingCount(): number {
     return this.queue.length;
@@ -85,22 +93,24 @@ export class SessionWriter {
   }
 
   /** Queues then flushes — used for PLAY/PAUSE/TAB_HIDDEN/ENDED/SEEK. */
-  async sendImmediate(type: Exclude<ClientEventType, "TICK">, positionSec: number, clientAt?: string): Promise<FlushOutcome | null> {
+  async sendImmediate(type: Exclude<ClientEventType, "TICK">, positionSec: number, clientAt?: string, opts?: PostOpts): Promise<FlushOutcome | null> {
     if (type === "PLAY" || type === "PAUSE") this.currentPlayState = type;
     this.queue.push({ seq: this.allocSeq(), type, positionSec, clientAt });
-    return this.flush();
+    return this.flush(opts);
   }
 
   /** Sends whatever is queued (≤20/request) once it's this write's turn. No-op if nothing is queued. */
-  async flush(): Promise<FlushOutcome | null> {
+  async flush(opts?: PostOpts): Promise<FlushOutcome | null> {
     if (this.queue.length === 0) return null;
     return this.runExclusive(async () => {
       if (this.queue.length === 0) return null; // drained by another flush while we waited for the lock
       const batch = this.queue.splice(0, EVENT_CAPS.MAX_EVENTS_PER_REQUEST);
       try {
-        const res = await this.post(batch);
+        const res = await this.post(batch, opts);
         if (res.ok) return { kind: "ok", result: res.result };
         this.recoverFromConflict(res.conflict);
+        // Flush the correction (if any) right away instead of waiting for the next interval (MAJOR 1).
+        if (this.queue.length > 0) void this.flush();
         return { kind: "conflict", conflict: res.conflict };
       } catch {
         // Network/5xx: put the batch back ahead of anything queued meanwhile, retried next flush.

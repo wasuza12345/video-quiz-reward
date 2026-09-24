@@ -1,17 +1,23 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { PublicQuestion } from "@/shared/contracts/session";
 import type { WatchAction } from "../state/watch.actions";
 import type { SessionWriterApi } from "./useSessionWriter";
 import type { YTPlayer } from "./useYouTubePlayer";
-import { decideFrame } from "./watch-tracker-core";
+import { WatchTracker } from "./watch-tracker-core";
 
 export interface UseWatchTrackerOptions {
   player: YTPlayer | null;
   /** Only runs while the reducer thinks we're playing. */
   active: boolean;
+  /** Identifies the current session — the tracker resets when this changes (a fresh mount, or a
+   * replay reload that keeps WatchPage itself mounted). */
+  sessionId: string | null;
   furthestSec: number;
+  /** Non-null exactly when the reducer wants a corrective seek (rejection/conflict/gate-fallback/
+   * ended-fallback/the guard's own snap-back) — the tracker is reconciled down to it. */
+  pendingSeekTo: number | null;
   quizzes: PublicQuestion[];
   passedQuestionIds: string[];
   writer: SessionWriterApi;
@@ -20,14 +26,37 @@ export interface UseWatchTrackerOptions {
 
 /**
  * Drives the rAF anti-cheat loop (plan §6) and the TICK cadence (plan §4.2: produced every 1s,
- * flushed every 5s). Positions are sent unrounded, straight from `player.getCurrentTime()`.
+ * flushed every 5s) via a `WatchTracker`. Positions are sent unrounded, straight from
+ * `player.getCurrentTime()`.
  */
-export function useWatchTracker({ player, active, furthestSec, quizzes, passedQuestionIds, writer, dispatch }: UseWatchTrackerOptions): void {
-  const latest = useRef({ furthestSec, quizzes, passedQuestionIds });
+export function useWatchTracker({
+  player,
+  active,
+  sessionId,
+  furthestSec,
+  pendingSeekTo,
+  quizzes,
+  passedQuestionIds,
+  writer,
+  dispatch,
+}: UseWatchTrackerOptions): void {
+  const tracker = useMemo(
+    () => new WatchTracker(furthestSec),
+    // initialFurthestSec is intentionally read only at creation time (it advances on every
+    // accepted sync afterward; re-memoizing on it would reset the tracker's high-water mark).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId],
+  );
+
   useEffect(() => {
-    latest.current = { furthestSec, quizzes, passedQuestionIds };
+    if (pendingSeekTo !== null) tracker.reconcile(pendingSeekTo);
+  }, [pendingSeekTo, tracker]);
+
+  const latest = useRef({ quizzes, passedQuestionIds });
+  useEffect(() => {
+    latest.current = { quizzes, passedQuestionIds };
   });
-  // While a gate TICK+PAUSE write is in flight, stop re-deciding every frame — decideFrame would
+  // While a gate TICK+PAUSE write is in flight, stop re-deciding every frame — onFrame would
   // otherwise keep returning "gate" until passedQuestionIds catches up.
   const gateInFlight = useRef(false);
 
@@ -35,13 +64,18 @@ export function useWatchTracker({ player, active, furthestSec, quizzes, passedQu
     if (!player || !active) return;
     let rafId: number;
     let lastTickAt = performance.now();
+    let lastFrameAt = performance.now();
 
     const loop = () => {
+      const now = performance.now();
+      const frameDtSec = (now - lastFrameAt) / 1000;
+      lastFrameAt = now;
+
       const currentTime = player.getCurrentTime();
-      const { furthestSec, quizzes, passedQuestionIds } = latest.current;
+      const { quizzes, passedQuestionIds } = latest.current;
 
       if (!gateInFlight.current) {
-        const decision = decideFrame({ currentTime, furthestSec, quizzes, passedQuestionIds });
+        const decision = tracker.onFrame(currentTime, frameDtSec, quizzes, passedQuestionIds);
         if (decision.kind === "seek_guard") {
           player.seekTo(decision.seekTo, true);
           dispatch({ type: "CLIENT_SEEK_GUARD", furthestSec: decision.seekTo });
@@ -57,9 +91,9 @@ export function useWatchTracker({ player, active, furthestSec, quizzes, passedQu
         }
       }
 
-      const now = performance.now();
-      if (now - lastTickAt >= 1000) {
-        lastTickAt = now;
+      const nowTick = performance.now();
+      if (nowTick - lastTickAt >= 1000) {
+        lastTickAt = nowTick;
         writer.queueTick(currentTime);
       }
       rafId = requestAnimationFrame(loop);
@@ -67,7 +101,7 @@ export function useWatchTracker({ player, active, furthestSec, quizzes, passedQu
 
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  }, [player, active, writer, dispatch]);
+  }, [player, active, tracker, writer, dispatch]);
 
   useEffect(() => {
     if (!player || !active) return;

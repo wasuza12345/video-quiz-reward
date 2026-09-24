@@ -35,6 +35,20 @@ describe("SessionWriter — seq allocation and immediate flush", () => {
     expect(calls[0].map((e) => e.type)).toEqual(["TICK", "TICK", "PAUSE"]);
   });
 
+  it("resumes past a session's already-confirmed lastSeq instead of restarting at 1 (review MAJOR 1)", async () => {
+    const calls: QueuedEvent[][] = [];
+    const post: PostEventsFn = async (events) => {
+      calls.push(events);
+      return okResult();
+    };
+    const w = new SessionWriter(post, 27); // e.g. resumed after a refresh, server already has lastSeq=27
+    await w.sendImmediate("PLAY", 10);
+
+    expect(calls[0]).toEqual([{ seq: 28, type: "PLAY", positionSec: 10, clientAt: undefined }]);
+    // no 409: the mock always returns ok, so a real server (rejecting seq <= its lastSeq) would
+    // likewise accept this seq 28 rather than colliding with an already-stored seq 1..27.
+  });
+
   it("flush() is a no-op when nothing is queued", async () => {
     const post = vi.fn<PostEventsFn>(async () => okResult());
     const w = new SessionWriter(post);
@@ -111,7 +125,7 @@ describe("SessionWriter — 409 recovery never loops (plan §4.2)", () => {
     expect(second).toBeNull();
   });
 
-  it("resends exactly one correcting PLAY when our intent disagrees with the server's PAUSED, never the dropped stale events", async () => {
+  it("resends exactly one correcting PLAY when our intent disagrees with the server's PAUSED, flushed immediately rather than left for the next interval (review MAJOR 1)", async () => {
     const calls: QueuedEvent[][] = [];
     let call = 0;
     const post: PostEventsFn = async (events) => {
@@ -124,15 +138,14 @@ describe("SessionWriter — 409 recovery never loops (plan §4.2)", () => {
     w.queueTick(1); // seq 1 — will be dropped (stale TICK)
     w.queueTick(2); // seq 2 — will be dropped (stale TICK)
     await w.sendImmediate("PLAY", 2); // seq 3, currentPlayState = "PLAY"; this call triggers the conflict
+    await flushMicrotasks(); // let the auto-triggered correction (queued behind the same lock) finish sending
 
     expect(calls[0].map((e) => e.seq)).toEqual([1, 2, 3]);
-    expect(w.pendingCount).toBe(1); // exactly one correcting event queued
-    expect(call).toBe(1); // recovery does not itself re-send — it only queues
-
-    const outcome = await w.flush();
+    // The correction was queued AND already sent by the time sendImmediate resolves — no waiting
+    // for the next 5s interval (that was the old behavior; MAJOR 1 fixes it).
+    expect(call).toBe(2);
     expect(calls[1]).toHaveLength(1);
     expect(calls[1][0]).toMatchObject({ seq: 6, type: "PLAY", positionSec: 9 }); // fresh seq past lastSeq 5, not 1/2/3
-    expect(outcome?.kind).toBe("ok");
     expect(w.pendingCount).toBe(0);
 
     // No further network calls happen without new queued work — the recovery terminated.

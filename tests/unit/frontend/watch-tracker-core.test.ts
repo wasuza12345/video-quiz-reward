@@ -1,76 +1,112 @@
 import { describe, expect, it } from "vitest";
-import { decideFrame } from "@/frontend/public/hooks/watch-tracker-core";
+import { WatchTracker } from "@/frontend/public/hooks/watch-tracker-core";
 import type { PublicQuestion } from "@/shared/contracts/session";
 
 const Q1: PublicQuestion = { id: "q1", triggerSec: 13, prompt: "?", choices: [] };
 const QUIZZES = [Q1];
 
-describe("decideFrame — anti-cheat per-frame checks (plan §6)", () => {
-  it("honest playback (current tracking furthest, below the trigger) does nothing", () => {
-    expect(decideFrame({ currentTime: 5, furthestSec: 5, quizzes: QUIZZES, passedQuestionIds: [] })).toEqual({ kind: "none" });
-    expect(decideFrame({ currentTime: 6.4, furthestSec: 5, quizzes: QUIZZES, passedQuestionIds: [] })).toEqual({ kind: "none" }); // within the 1.5s slack
+describe("WatchTracker.onFrame — anti-cheat per-frame checks (plan §6)", () => {
+  it("honest playback (current tracking the high-water mark, below the trigger) does nothing", () => {
+    const t = new WatchTracker(5);
+    expect(t.onFrame(5, 0.016, QUIZZES, [])).toEqual({ kind: "none" });
+    expect(t.onFrame(5.2, 0.016, QUIZZES, [])).toEqual({ kind: "none" }); // within the advance threshold
   });
 
-  it("current > furthest + 1.5 → seek guard snaps back to furthest", () => {
-    const d = decideFrame({ currentTime: 6.6, furthestSec: 5, quizzes: QUIZZES, passedQuestionIds: [] });
+  it("a jump beyond the 1.5s slack → seek guard snaps back to the high-water mark", () => {
+    const t = new WatchTracker(5);
+    const d = t.onFrame(6.6, 0.016, QUIZZES, []);
     expect(d).toEqual({ kind: "seek_guard", seekTo: 5 });
+    expect(t.maxReached).toBe(5); // unchanged by a rejected frame
   });
 
   it("reaching the trigger opens the gate for that question", () => {
-    const d = decideFrame({ currentTime: 13, furthestSec: 13, quizzes: QUIZZES, passedQuestionIds: [] });
-    expect(d).toEqual({ kind: "gate", questionId: "q1", triggerSec: 13 });
+    const t = new WatchTracker(13);
+    expect(t.onFrame(13, 0.016, QUIZZES, [])).toEqual({ kind: "gate", questionId: "q1", triggerSec: 13 });
   });
 
   it("a passed question's trigger does not re-open the gate", () => {
-    const d = decideFrame({ currentTime: 13, furthestSec: 13, quizzes: QUIZZES, passedQuestionIds: ["q1"] });
-    expect(d).toEqual({ kind: "none" });
+    const t = new WatchTracker(13);
+    expect(t.onFrame(13, 0.016, QUIZZES, ["q1"])).toEqual({ kind: "none" });
   });
 
   it("the seek guard takes priority over the gate on the same frame", () => {
-    // furthest is far behind current, past the trigger too — should snap back, not open the gate.
-    const d = decideFrame({ currentTime: 20, furthestSec: 5, quizzes: QUIZZES, passedQuestionIds: [] });
-    expect(d).toEqual({ kind: "seek_guard", seekTo: 5 });
+    const t = new WatchTracker(5);
+    expect(t.onFrame(20, 0.016, QUIZZES, [])).toEqual({ kind: "seek_guard", seekTo: 5 });
   });
 
   it("no quizzes at all: never gates, only the seek guard can fire", () => {
-    expect(decideFrame({ currentTime: 30, furthestSec: 30, quizzes: [], passedQuestionIds: [] })).toEqual({ kind: "none" });
-    expect(decideFrame({ currentTime: 32, furthestSec: 30, quizzes: [], passedQuestionIds: [] })).toEqual({ kind: "seek_guard", seekTo: 30 });
+    const t = new WatchTracker(30);
+    expect(t.onFrame(30, 0.016, [], [])).toEqual({ kind: "none" });
+    expect(t.onFrame(32, 0.016, [], [])).toEqual({ kind: "seek_guard", seekTo: 30 });
+  });
+
+  it("a backward seek (rewatching) never lowers the high-water mark by itself", () => {
+    const t = new WatchTracker(10);
+    t.onFrame(2, 0.016, [], []); // user rewinds
+    expect(t.maxReached).toBe(10);
+  });
+
+  it("reconcile() forces the high-water mark to an exact value (used on rejection/conflict/gate-fallback/ended-fallback)", () => {
+    const t = new WatchTracker(10);
+    t.onFrame(10.1, 0.016, [], []); // advances a little
+    t.reconcile(3);
+    expect(t.maxReached).toBe(3);
+    // and the guard now measures from the reconciled value, not the pre-reconcile one
+    expect(t.onFrame(5, 0.016, [], [])).toEqual({ kind: "seek_guard", seekTo: 3 });
   });
 });
 
-describe("decideFrame — a realistic honest-viewer frame sequence from a fake player", () => {
-  class FakePlayer {
-    time = 0;
-    advance(sec: number) {
-      this.time += sec;
-      return this.time;
-    }
-  }
+describe("WatchTracker — rAF gap and drag tolerance (review MINOR/BLOCKER acceptance)", () => {
+  it("a 1.2s rAF gap is accepted as an advance, not snapped back", () => {
+    const t = new WatchTracker(10);
+    const d = t.onFrame(11.2, 1.2, [], []); // frameDtSec=1.2 → advanceThreshold = max(0.25, 2.4) = 2.4
+    expect(d).toEqual({ kind: "none" });
+    expect(t.maxReached).toBe(11.2);
+  });
 
-  it("an honest 1× viewer never trips the seek guard and gates exactly once at the trigger", () => {
-    const player = new FakePlayer();
-    let furthestSec = 0;
-    let passedQuestionIds: string[] = [];
-    const gateHits: string[] = [];
-    const seekGuards: number[] = [];
+  it("a user drag of +10s at a normal frame rate is snapped back", () => {
+    const t = new WatchTracker(10);
+    const d = t.onFrame(20, 0.016, [], []);
+    expect(d).toEqual({ kind: "seek_guard", seekTo: 10 });
+    expect(t.maxReached).toBe(10);
+  });
+});
 
-    // 20 frames of honest playback, ~0.7s apart, crossing the trigger at 13s.
-    for (let i = 0; i < 20; i++) {
-      const currentTime = player.advance(0.7);
-      const decision = decideFrame({ currentTime, furthestSec, quizzes: QUIZZES, passedQuestionIds });
-      if (decision.kind === "seek_guard") {
-        seekGuards.push(decision.seekTo);
-        furthestSec = decision.seekTo;
-      } else if (decision.kind === "gate") {
-        gateHits.push(decision.questionId);
-        passedQuestionIds = [...passedQuestionIds, decision.questionId]; // simulate answering immediately
-        furthestSec = decision.triggerSec;
-      } else {
-        furthestSec = Math.max(furthestSec, currentTime);
+describe("WatchTracker — 20s of honest 1× playback with periodic server syncs (plan §6, review BLOCKER)", () => {
+  /**
+   * This is the exact bug the reviewer found in production on commit 136a73e: the seek guard
+   * compared against the reducer's server-synced furthestSec, which only moved every ~5s (and,
+   * separately, never moved at all for a new session because accepted responses were never
+   * dispatched anywhere — see EVENTS_SYNCED in watch.reducer.ts). A quick reproduction of that
+   * exact old formula (see /tmp reproduction script, not part of this codebase) against this same
+   * 20s honest-playback sequence: the seek guard fires 13 times and playback never gets past
+   * ~1.5s. `WatchTracker` fixes this by tracking its OWN local high-water mark every frame,
+   * reconciled down only by explicit server corrections — never by silently going stale.
+   */
+  it("zero seek_guard decisions over 20s, and the gate fires exactly once at the trigger", () => {
+    const tracker = new WatchTracker(0);
+    let simulatedTime = 0;
+    const passed: string[] = [];
+    const seekGuards: unknown[] = [];
+    const gates: unknown[] = [];
+
+    // One rAF frame every 16ms (60fps) for 20 simulated seconds of honest 1x playback.
+    for (let ms = 16; ms <= 20_000; ms += 16) {
+      simulatedTime += 0.016; // 1x playback: real time elapsed == video time elapsed
+      const decision = tracker.onFrame(simulatedTime, 0.016, QUIZZES, passed);
+      if (decision.kind === "seek_guard") seekGuards.push(decision);
+      if (decision.kind === "gate") {
+        gates.push(decision);
+        passed.push(decision.questionId); // simulate answering immediately so it doesn't re-gate
       }
+
+      // A server sync every ~5s (plan §4.2's flush cadence) reporting an ACCEPTED, honest
+      // furthestSec at or ahead of what the tracker already knows — this must never regress it.
+      if (ms % 5000 === 0) tracker.reconcile(Math.max(tracker.maxReached, simulatedTime));
     }
 
     expect(seekGuards).toEqual([]);
-    expect(gateHits).toEqual(["q1"]); // fires once, not on every subsequent frame past the trigger
+    expect(gates).toHaveLength(1);
+    expect((gates[0] as { triggerSec: number }).triggerSec).toBe(13);
   });
 });

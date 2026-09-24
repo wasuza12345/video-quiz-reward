@@ -1,34 +1,68 @@
-// Pure per-frame anti-cheat decisions for the rAF loop (plan §6, spec.md §4.2). No timers, no
-// player, no React — useWatchTracker.ts drives this with the real (or a fake) player's time.
+// The rAF anti-cheat seek guard + quiz gate (plan §6, spec.md §4.2), as a plain class with no
+// React/player dependency — so it can be unit-tested directly (rendering/effects live in
+// useWatchTracker.ts, following the same split as session-writer-core.ts/useSessionWriter.ts).
+//
+// The seek guard compares against a LOCAL high-water mark this class owns, NOT the reducer's
+// server-synced furthestSec — that only moves on a ~5s flush cadence, so comparing against it
+// directly snaps honest playback back every ~1.5s after every sync. Worse, prior to the
+// EVENTS_SYNCED fix in watch.reducer.ts, accepted responses were never dispatched anywhere at
+// all, so furthestSec could stay at its initial value (often 0) for an entire session — every
+// honest viewer hit the guard every ~1.5s, forever. `reconcile()` is the only thing that ever
+// lowers this class's high-water mark; call it on a corrective server response (rejection,
+// conflict, gate fallback, ended fallback) — a normal accepted sync never should.
 import { nextUnpassedQuestion } from "../state/watch.selectors";
 import type { PublicQuestion } from "@/shared/contracts/session";
 
-const FORWARD_SLACK_SEC = 1.5;
-
-export interface FrameInput {
-  currentTime: number;
-  furthestSec: number;
-  quizzes: PublicQuestion[];
-  passedQuestionIds: string[];
-}
+/** How far past the high-water mark a single frame may advance it before it's just "not yet trusted". */
+const ADVANCE_FLOOR_SEC = 0.25;
+/** Multiplied by the real time since the last frame, so a throttled rAF (backgrounding, a
+ * rebuffer catch-up) doesn't itself look like a forward skip. */
+const ADVANCE_RATE = 2;
+/** Beyond this past the high-water mark, a jump is treated as a real skip and snapped back. */
+const SEEK_GUARD_SLACK_SEC = 1.5;
 
 export type FrameDecision =
   | { kind: "seek_guard"; seekTo: number }
   | { kind: "gate"; questionId: string; triggerSec: number }
   | { kind: "none" };
 
-/**
- * One frame's worth of anti-cheat checks, in order: the seek guard first (rAF: `current >
- * furthest + 1.5` → seekTo(furthest)), then the quiz gate (`current >= next.triggerSec`).
- * A frame that trips the seek guard never also opens the gate — the snap-back already handles it.
- */
-export function decideFrame(input: FrameInput): FrameDecision {
-  if (input.currentTime > input.furthestSec + FORWARD_SLACK_SEC) {
-    return { kind: "seek_guard", seekTo: input.furthestSec };
+export class WatchTracker {
+  private maxReachedSec: number;
+
+  constructor(initialFurthestSec: number) {
+    this.maxReachedSec = initialFurthestSec;
   }
-  const next = nextUnpassedQuestion(input.quizzes, input.passedQuestionIds);
-  if (next && input.currentTime >= next.triggerSec) {
-    return { kind: "gate", questionId: next.id, triggerSec: next.triggerSec };
+
+  get maxReached(): number {
+    return this.maxReachedSec;
   }
-  return { kind: "none" };
+
+  /**
+   * One frame's worth of anti-cheat checks. The quiz gate check always uses the raw
+   * `currentTime`, independent of whether this frame's advance was accepted — queuing the gate
+   * TICK is itself subject to the server's own bucket check, so this isn't a security-relevant
+   * shortcut. A backward SEEK (rewatching) never lowers the high-water mark by itself.
+   */
+  onFrame(currentTime: number, frameDtSec: number, quizzes: PublicQuestion[], passedQuestionIds: string[]): FrameDecision {
+    const advanceThreshold = Math.max(ADVANCE_FLOOR_SEC, ADVANCE_RATE * frameDtSec);
+
+    if (currentTime <= this.maxReachedSec + advanceThreshold) {
+      this.maxReachedSec = Math.max(this.maxReachedSec, currentTime);
+    } else if (currentTime > this.maxReachedSec + SEEK_GUARD_SLACK_SEC) {
+      return { kind: "seek_guard", seekTo: this.maxReachedSec };
+    }
+    // else: between advanceThreshold and the 1.5s slack — not yet trusted as new ground, but not
+    // extreme enough to snap back either; the high-water mark is simply left as-is this frame.
+
+    const next = nextUnpassedQuestion(quizzes, passedQuestionIds);
+    if (next && currentTime >= next.triggerSec) {
+      return { kind: "gate", questionId: next.id, triggerSec: next.triggerSec };
+    }
+    return { kind: "none" };
+  }
+
+  /** Forces the high-water mark down to match a corrective server response. */
+  reconcile(serverFurthestSec: number): void {
+    this.maxReachedSec = serverFurthestSec;
+  }
 }

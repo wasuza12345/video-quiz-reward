@@ -121,6 +121,39 @@ describe("quiz gate (rows 9-12)", () => {
   });
 });
 
+describe("EVENTS_SYNCED — every accepted events response (review BLOCKER: previously dispatched nowhere)", () => {
+  const playing = run([{ type: "SESSION_LOADED", session: session() }, { type: "PLAY_CLICKED" }]);
+
+  it("row 6: an ordinary accepted sync just advances positionSec/furthestSec, status untouched", () => {
+    const s = watchReducer(playing, { type: "EVENTS_SYNCED", state: "PLAYING", positionSec: 4, furthestSec: 4, currentQuestionId: null });
+    expect(s.status).toBe("playing");
+    expect(s.positionSec).toBe(4);
+    expect(s.furthestSec).toBe(4);
+  });
+
+  it("row 10 fallback: an ordinary TICK flush (not the dedicated gate hit) reaching QUIZ_PENDING while still 'playing' opens the quiz", () => {
+    const s = watchReducer(playing, { type: "EVENTS_SYNCED", state: "QUIZ_PENDING", positionSec: 13, furthestSec: 13, currentQuestionId: "q1" });
+    expect(s.status).toBe("quiz_open");
+    expect(s.quizPhase).toBe("ready");
+    expect(s.currentQuestionId).toBe("q1");
+  });
+
+  it("QUIZ_PENDING while not 'playing' (e.g. already mid gate-sync) does not re-derive a status change", () => {
+    const syncing = watchReducer(playing, { type: "QUIZ_GATE_HIT", questionId: "q1" });
+    const s = watchReducer(syncing, { type: "EVENTS_SYNCED", state: "QUIZ_PENDING", positionSec: 13, furthestSec: 13, currentQuestionId: "q1" });
+    expect(s.status).toBe("quiz_open");
+    expect(s.quizPhase).toBe("syncing"); // untouched — GATE_TICK_RESULT owns that transition, not EVENTS_SYNCED
+  });
+});
+
+describe("CLAIM_STARTED", () => {
+  it("clears a prior claimError when a new claim attempt begins", () => {
+    const claimError = { ...initialWatchState, status: "claiming" as const, claimError: true };
+    const s = watchReducer(claimError, { type: "CLAIM_STARTED" });
+    expect(s.claimError).toBe(false);
+  });
+});
+
 describe("row 13, 11: answering", () => {
   function atQuiz() {
     return run([

@@ -32,7 +32,7 @@ export interface WatchPageProps {
 export function WatchPage({ videoId }: WatchPageProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(watchReducer, initialWatchState);
-  const writer = useSessionWriter(state.sessionId, dispatch);
+  const writer = useSessionWriter(state.sessionId, state.lastSeq, dispatch);
   const { visible: toast, dismissSticky } = useToast(state.toastRequest);
 
   const handleStateChangeRef = useRef<(ytState: number) => void>(() => {});
@@ -115,18 +115,21 @@ export function WatchPage({ videoId }: WatchPageProps) {
   useWatchTracker({
     player,
     active: state.status === "playing",
+    sessionId: state.sessionId,
     furthestSec: state.furthestSec,
+    pendingSeekTo: state.pendingSeekTo,
     quizzes: state.quizzes,
     passedQuestionIds: state.passedQuestionIds,
     writer,
     dispatch,
   });
 
-  // --- apply a reducer-requested seek, then resume playback if we're meant to be playing ---
+  // --- apply a reducer-requested seek, then resume playback if we're meant to be playing (and
+  // aren't already — avoids a redundant playVideo() call while one is already in progress) ---
   useEffect(() => {
     if (state.pendingSeekTo === null || !player) return;
     player.seekTo(state.pendingSeekTo, true);
-    if (state.status === "playing") player.playVideo();
+    if (state.status === "playing" && player.getPlayerState() !== YT_PLAYER_STATE.PLAYING) player.playVideo();
     dispatch({ type: "SEEK_CONSUMED" });
   }, [state.pendingSeekTo, state.status, player]);
 
@@ -176,7 +179,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
       const currentTime = player.getCurrentTime();
       dispatch({ type: "TAB_HIDDEN" });
       player.pauseVideo();
-      if (!writer.isInFlight()) void writer.sendImmediate("TAB_HIDDEN", currentTime);
+      if (!writer.isInFlight()) void writer.sendImmediate("TAB_HIDDEN", currentTime, undefined, { keepalive: true });
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);

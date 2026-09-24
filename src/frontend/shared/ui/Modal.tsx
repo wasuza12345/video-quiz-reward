@@ -53,7 +53,16 @@ export function Modal({ open, mode = "dialog", dismissible = true, onClose, labe
       aria-labelledby={labelledBy}
       aria-describedby={describedBy}
       className={mode === "sheet" ? "modal-sheet" : "modal-dialog"}
-      onClose={() => onClose?.()}
+      onClose={() => {
+        // Chrome's CloseWatcher can force a <dialog> closed on a second rapid Esc even though we
+        // preventDefault()'d the `cancel` event for a non-dismissible one (MAJOR 2) — reopen it
+        // immediately rather than leaving `open` state and the actual DOM out of sync.
+        if (!dismissible && open) {
+          ref.current?.showModal();
+          return;
+        }
+        onClose?.();
+      }}
     >
       {open && children}
     </dialog>
