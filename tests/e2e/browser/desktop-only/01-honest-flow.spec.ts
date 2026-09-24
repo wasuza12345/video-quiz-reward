@@ -8,6 +8,7 @@
 // way to shortcut that and still prove the real client/player/anti-cheat wiring.
 import { expect, test } from "@playwright/test";
 import { collectEventResults } from "../helpers/events";
+import { clickPlayPause } from "../helpers/watch";
 
 test.setTimeout(180_000);
 
@@ -25,23 +26,23 @@ test("honest flow: featured card → quiz retry/correct → full watch → +50 �
   await featured.click();
 
   await page.waitForURL(/\/watch\//);
-  await expect(page.getByRole("button", { name: "เล่นวิดีโอ" }).first()).toBeEnabled({ timeout: 20_000 });
-
-  await page.getByRole("button", { name: "เล่นวิดีโอ" }).first().click();
+  await clickPlayPause(page);
 
   const dialog = page.getByRole("dialog");
-  await expect(dialog, "the quiz dialog must open once the video reaches its trigger time").toBeVisible({ timeout: 45_000 });
+  await expect(dialog, "the quiz dialog must open once the video reaches its trigger time").toBeVisible({ timeout: 60_000 });
 
   const wrongChoice = page.getByRole("button", { name: new RegExp(`^ตัวเลือก ${WRONG_CHOICE_LABEL}:`) });
   await wrongChoice.click();
   await expect(page.getByText("ยังไม่ถูกนะคะ")).toBeVisible();
   await expect(wrongChoice).toHaveAttribute("aria-disabled", "true");
 
+  // No assertion on the "ถูกต้องค่ะ!" feedback text itself: auto-resume dismisses the dialog only
+  // ~900ms after a correct answer (WatchPage.tsx), which is a race an already-slow action (the
+  // click's own actionability wait, or general scheduling jitter) can lose outright — the dialog
+  // actually closing below is the real, unambiguous proof the correct answer was accepted (a
+  // wrong one never closes it).
   const correctChoice = page.getByRole("button", { name: new RegExp(`^ตัวเลือก ${CORRECT_CHOICE_LABEL}:`) });
   await correctChoice.click();
-  await expect(page.getByText("ถูกต้องค่ะ!")).toBeVisible();
-
-  // Auto-resume fires ~900ms after a correct answer (WatchPage.tsx).
   await expect(dialog, "the quiz dialog must close and playback resume after a correct answer").toBeHidden({ timeout: 5_000 });
 
   const rewardText = page.getByText(/\+\d+\s*Points/);

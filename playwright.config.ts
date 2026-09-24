@@ -15,7 +15,10 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
-  retries: 0,
+  // 1 retry: the honest-flow/admin specs decode a real ~44s YouTube video on a shared machine —
+  // a transient network/scheduling hiccup shouldn't fail the whole run (plan §10: "if headless
+  // video timing is flaky ... document it").
+  retries: 1,
   reporter: [["list"], ["json", { outputFile: "test-results/e2e-report.json" }]],
   use: {
     baseURL: BASE_URL,
@@ -32,7 +35,7 @@ export default defineConfig({
       PORT,
     },
     reuseExistingServer: false,
-    timeout: 60_000,
+    timeout: 120_000,
     stdout: "pipe",
     stderr: "pipe",
   },

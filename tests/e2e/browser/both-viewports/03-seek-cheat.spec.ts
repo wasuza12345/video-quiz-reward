@@ -4,6 +4,7 @@
 // needed for this to be caught — and there is no reward.
 import { expect, test } from "@playwright/test";
 import { exposeYouTubePlayerOnWindow, getPlayerCurrentTime, seekPlayerTo, waitForWindowPlayer } from "../helpers/player";
+import { clickPlayPause } from "../helpers/watch";
 
 test.setTimeout(60_000);
 
@@ -15,7 +16,7 @@ test("player.seekTo(40) from the console snaps back and earns nothing", async ({
   await page.waitForURL(/\/watch\//);
   await waitForWindowPlayer(page);
 
-  await page.getByRole("button", { name: "เล่นวิดีโอ" }).first().click();
+  await clickPlayPause(page);
   await page.waitForTimeout(2_500);
   const beforeCheat = await getPlayerCurrentTime(page);
   expect(beforeCheat, "expected a few real seconds of honest playback before the cheat attempt").toBeGreaterThan(0);

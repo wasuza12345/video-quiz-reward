@@ -2,10 +2,11 @@
 // data-table-heavy backoffice; the mobile-vs-desktop CSS pairing is exercised lightly by the
 // AdminShell nav (both markups always render, CSS toggles which is visible), not by this flow's
 // business logic, so duplicating the ~real-video-touching parts at 390×844 wouldn't add much.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { adminLogin } from "../helpers/admin";
-import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_TEST_VIDEO_YOUTUBE_ID, BRIEF_QUESTION_TRIGGER_SEC, BRIEF_VIDEO_YOUTUBE_ID } from "../helpers/env";
-import { exposeYouTubePlayerOnWindow, seekPlayerTo, waitForPlayerDuration, waitForWindowPlayer } from "../helpers/player";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_TEST_VIDEO_YOUTUBE_ID, BRIEF_VIDEO_YOUTUBE_ID } from "../helpers/env";
+import { exposeYouTubePlayerOnWindow, resetWindowPlayer, seekPlayerTo, waitForPlayerDuration, waitForWindowPlayer } from "../helpers/player";
+import { createSession, findVideoByYoutubeId, postEvents, UserSession } from "../../helpers/api";
 
 test.setTimeout(120_000);
 
@@ -14,20 +15,15 @@ test("admin login: wrong password shows an error, correct password reaches the d
   await page.locator("#admin-email").fill(ADMIN_EMAIL);
   await page.locator("#admin-password").fill("definitely-the-wrong-password");
   await page.getByRole("button", { name: "เข้าสู่ระบบ" }).click();
-  await expect(page.getByRole("alert")).toContainText("อีเมลหรือรหัสผ่านไม่ถูกต้องค่ะ");
+  // getByRole("alert") also matches Next's own route-announcer div — match the message text
+  // directly instead.
+  await expect(page.getByText("อีเมลหรือรหัสผ่านไม่ถูกต้องค่ะ")).toBeVisible();
 
   await page.locator("#admin-password").fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: "เข้าสู่ระบบ" }).click();
   await page.waitForURL(/\/admin(\?.*)?$/, { timeout: 15_000 });
   await expect(page.getByText("แดชบอร์ด").first()).toBeVisible();
 });
-
-function choiceTextInput(page: Page, label: string) {
-  // The choice row has no id/name on its text input (VideoForm-style plain inputs) — go up from
-  // the radio (whose aria-label IS stable: "เฉลย {label}") to the row div, then find the sibling
-  // input that isn't the radio itself (QuizEditor.tsx: <label><input radio/></label><span/><input/>).
-  return page.locator(`input[aria-label="เฉลย ${label}"]`).locator("xpath=../..").locator('input:not([type="radio"])');
-}
 
 test("create video → publish → feature → shows on / → session timeline → locked fields → logout", async ({ page }) => {
   await exposeYouTubePlayerOnWindow(page);
@@ -37,27 +33,38 @@ test("create video → publish → feature → shows on / → session timeline �
 
   await test.step("create a video from a YouTube URL", async () => {
     await page.goto("/admin/videos/new");
+    // The preview player only mounts once youtubeUrl parses to an id — fill it first.
+    await page.getByLabel("ลิงก์ YouTube").fill(`https://youtu.be/${ADMIN_TEST_VIDEO_YOUTUBE_ID}`);
     await waitForWindowPlayer(page);
-    await waitForPlayerDuration(page); // the admin preview player reports durationSec (plan §7)
+    await waitForPlayerDuration(page); // the raw player reports a duration...
+    // ...but AdminVideoFormPage's own `durationSec` state (what Save actually validates) only
+    // catches up on YouTubePreview's own 200ms poll + a re-render — wait for the durationSec
+    // field's own displayed value instead of racing that.
+    await expect(page.getByLabel("ความยาว")).not.toHaveValue("", { timeout: 10_000 });
+    await page.getByLabel("ชื่อคลิป").fill(videoTitle);
 
-    await page.locator('label:text-is("ลิงก์ YouTube") + input').fill(`https://youtu.be/${ADMIN_TEST_VIDEO_YOUTUBE_ID}`);
-    await waitForPlayerDuration(page); // re-fires: the preview player is rebuilt for the new link
-    await page.locator('label:text-is("ชื่อคลิป") + input').fill(videoTitle);
-
+    // This is a client-side router.push (SPA nav, not a reload): window.__ytPlayer would
+    // otherwise still hold the create page's (about-to-be-destroyed) instance.
+    await resetWindowPlayer(page);
     await page.getByRole("button", { name: "บันทึกและเพิ่มคำถาม" }).click();
-    await page.waitForURL(/\/admin\/videos\/[^/]+$/, { timeout: 20_000 });
+    // "/admin/videos/new" itself matches a naive `[^/]+$` pattern — require a real id (uuid).
+    // Generous timeout: saving hits the real youtube.com oEmbed server-side (plan §7).
+    await page.waitForURL(/\/admin\/videos\/[0-9a-f-]{20,}$/, { timeout: 40_000 });
   });
 
   await test.step('add a question using "ใช้เวลาปัจจุบัน"', async () => {
-    await waitForWindowPlayer(page); // a fresh preview-player instance on the edit page
+    await waitForWindowPlayer(page); // the fresh preview-player instance on the edit page
+    await waitForPlayerDuration(page);
     await seekPlayerTo(page, 5, true);
-    await page.waitForTimeout(800);
 
     await page.getByRole("button", { name: "+ เพิ่มคำถาม" }).click();
-    await page.locator("textarea").fill("Test question?");
-    await choiceTextInput(page, "A").fill("Choice A");
-    await choiceTextInput(page, "B").fill("Choice B");
+    // exact: true — "คำถาม" is otherwise a substring match of "เวลาที่คำถามขึ้น" (the trigger field).
+    await page.getByLabel("คำถาม", { exact: true }).fill("Test question?");
+    await page.getByLabel("ข้อความตัวเลือก A").fill("Choice A");
+    await page.getByLabel("ข้อความตัวเลือก B").fill("Choice B");
 
+    // "ใช้เวลาปัจจุบัน" only enables once the 200ms onTimeUpdate poll observes currentTime > 0
+    // after the seek above — not instant, so poll the button's own state rather than a fixed sleep.
     const useCurrentTimeBtn = page.getByRole("button", { name: "ใช้เวลาปัจจุบัน" });
     await expect(useCurrentTimeBtn).toBeEnabled({ timeout: 10_000 });
     await useCurrentTimeBtn.click();
@@ -82,44 +89,64 @@ test("create video → publish → feature → shows on / → session timeline �
 
   let briefVideoId = "";
   let flaggedSessionId = "";
-  await test.step("manufacture a flagged/rejected session (real HTTP, via the page's own cookie) for the reject/flag timeline check", async () => {
-    const videosBody = (await (await page.request.get("/api/videos")).json()) as {
-      featured: { id: string; youtubeId: string } | null;
-      videos: { id: string; youtubeId: string }[];
-    };
-    const brief = [videosBody.featured, ...videosBody.videos].find((v) => v?.youtubeId === BRIEF_VIDEO_YOUTUBE_ID);
-    if (!brief) throw new Error(`brief video ${BRIEF_VIDEO_YOUTUBE_ID} not found via GET /api/videos`);
-    briefVideoId = brief.id;
+  await test.step("manufacture a flagged/rejected session (real HTTP) for the reject/flag timeline check", async () => {
+    // UserSession, not raw page.request: APIRequestContext — even page.request, bound to this
+    // same browser context — doesn't reliably persist a Secure-flagged cookie across calls over
+    // plain http (same limitation the API-level suite's helpers/api.ts works around); a real
+    // page.goto() navigation does (proxy-secure-cookie.browser.spec.ts), but plain page.request
+    // calls apparently don't share that. UserSession manages the cookie itself instead.
+    const user = new UserSession(page.request);
+    const video = await findVideoByYoutubeId(user, BRIEF_VIDEO_YOUTUBE_ID);
+    briefVideoId = video.id;
 
-    const created = (await (await page.request.post("/api/sessions", { data: { videoId: brief.id } })).json()) as { sessionId: string };
-    flaggedSessionId = created.sessionId;
-    await page.request.post(`/api/sessions/${flaggedSessionId}/events`, { data: { events: [{ seq: 1, type: "PLAY", positionSec: 0 }] } });
+    const created = await createSession(user, video.id);
+    const { sessionId } = (await created.json()) as { sessionId: string };
+    flaggedSessionId = sessionId;
+    await postEvents(user, sessionId, [{ seq: 1, type: "PLAY", positionSec: 0 }]);
     // furthestSec is still 0, so a TICK to 20 needs 20s — more than the 10s bank could ever hold
     // → a hard SEEK_FORWARD reject, flagged immediately (same rule the API-level suite exercises).
-    await page.request.post(`/api/sessions/${flaggedSessionId}/events`, { data: { events: [{ seq: 2, type: "TICK", positionSec: 20 }] } });
+    await postEvents(user, sessionId, [{ seq: 2, type: "TICK", positionSec: 20 }]);
   });
 
   await test.step("admin sessions: the flagged filter surfaces it, and the detail shows the reject chip + flag badge", async () => {
     await page.goto("/admin/sessions");
-    await page.getByLabel("เฉพาะที่ถูกแจ้งเตือน 🚩").check();
+    // .click(), not .check(): the checkbox's `checked` only flips once the router.push(?flagged=
+    // true) round-trips back through searchParams, which briefly races Playwright's own
+    // post-click "did the state actually change" verification that .check() does.
+    await page.getByLabel("เฉพาะที่ถูกแจ้งเตือน 🚩").click();
     await page.waitForURL(/flagged=true/);
     await expect(page.getByRole("link", { name: /^\S{6,}/ }).first(), "the flagged list must not be empty").toBeVisible({ timeout: 10_000 });
 
+    // Desktop table + mobile list both render in the DOM at once (CSS toggles visibility) — every
+    // text assertion below needs .first() to avoid a strict-mode multiple-match error.
     await page.goto(`/admin/sessions/${flaggedSessionId}`);
     await expect(page.getByText("ถูกแจ้งเตือน").first()).toBeVisible();
-    await expect(page.getByText("SEEK_FORWARD")).toBeVisible();
-    await expect(page.getByText("🚩 ทำให้ถูกแจ้งเตือน")).toBeVisible();
+    await expect(page.getByText("SEEK_FORWARD").first()).toBeVisible();
+    await expect(page.getByText("🚩 ทำให้ถูกแจ้งเตือน").first()).toBeVisible();
   });
 
   await test.step("admin sessions: an honestly-completed session shows TICK collapsing + ANSWER/CLAIM", async () => {
-    const listBody = (await (
-      await page.request.get(`/api/admin/sessions?videoId=${briefVideoId}&pageSize=50`)
-    ).json()) as { items: { id: string; state: string; pointsAwarded: number; isReplay: boolean }[] };
-    const rewarded = listBody.items.find((s) => s.state === "ENDED" && s.pointsAwarded > 0 && !s.isReplay);
-    if (!rewarded) throw new Error("expected at least one honestly-completed & rewarded session on the brief video (from the honest-flow spec)");
+    // A real page.goto + DOM read, not page.request: page.request doesn't reliably carry this
+    // browser context's cookies either (same limitation as the manufactured-session step above).
+    await page.goto(`/admin/sessions?videoId=${briefVideoId}`);
+    // "ดูจบ" (ENDED) + a "+N" points value + NOT "ดูทบทวน" (replay) — from 01-honest-flow.spec.ts,
+    // which runs earlier in this same project/worker. Desktop <tr> rows only (mobile is <li>).
+    const rewardedRow = page
+      .locator("tr", { hasText: "ดูจบ" })
+      .filter({ hasText: /\+\d+/ })
+      .filter({ hasNotText: "ดูทบทวน" })
+      .first();
+    await expect(rewardedRow, "expected at least one honestly-completed & rewarded session on the brief video (from the honest-flow spec)").toBeVisible({
+      timeout: 10_000,
+    });
+    const pointsText = await rewardedRow.locator("td").last().innerText();
+    const points = Number(pointsText.replace(/[^\d]/g, ""));
 
-    await page.goto(`/admin/sessions/${rewarded.id}`);
-    const collapsedGroup = page.getByRole("button", { name: /ความคืบหน้า ×/ });
+    await rewardedRow.getByRole("link").first().click();
+    await page.waitForURL(/\/admin\/sessions\/[0-9a-f-]{20,}$/, { timeout: 10_000 });
+
+    // .first(): desktop table + mobile list both render in the DOM at once.
+    const collapsedGroup = page.getByRole("button", { name: /ความคืบหน้า ×/ }).first();
     await expect(collapsedGroup, "consecutive accepted TICKs must collapse into one group").toBeVisible({ timeout: 10_000 });
     const groupCountBefore = await page.locator("tr", { hasText: "ความคืบหน้า ×" }).count();
 
@@ -128,12 +155,13 @@ test("create video → publish → feature → shows on / → session timeline �
     expect(groupCountAfter, "expanding the group must reveal more rows than the single collapsed summary row").toBeGreaterThan(groupCountBefore);
 
     await expect(page.locator("tr", { hasText: "ตอบ" }).first(), "the ANSWER row must summarize the choice + correctness").toBeVisible();
-    await expect(page.locator("tr", { hasText: `+${rewarded.pointsAwarded}` }).first(), "the CLAIM row must summarize the points").toBeVisible();
+    await expect(page.locator("tr", { hasText: `+${points}` }).first(), "the CLAIM row must summarize the points").toBeVisible();
   });
 
   await test.step("a locked video (the brief one, already watched) disables its locked fields", async () => {
     await page.goto("/admin/videos");
-    await page.getByRole("link", { name: /ตัวอย่างคลิป/ }).click();
+    // .first(): desktop table + mobile list both render in the DOM at once.
+    await page.getByRole("link", { name: /ตัวอย่างคลิป/ }).first().click();
     await page.waitForURL(/\/admin\/videos\/[^/]+$/, { timeout: 10_000 });
     await expect(page.locator("#video-locked-notice"), "a video with sessions must show the lock notice").toBeVisible({ timeout: 10_000 });
 
@@ -141,7 +169,7 @@ test("create video → publish → feature → shows on / → session timeline �
     await expect(page.getByRole("radio", { name: "เฉลย D" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "ใช้เวลาปัจจุบัน" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "ลบคำถาม" })).toBeDisabled();
-    await expect(page.locator('label:text-is("ลิงก์ YouTube 🔒") + input')).toHaveAttribute("readonly", "");
+    await expect(page.getByLabel("ลิงก์ YouTube")).toHaveAttribute("readonly", "");
   });
 
   await test.step("logout redirects to the login page, and /admin then requires logging in again", async () => {
