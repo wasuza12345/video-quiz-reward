@@ -12,8 +12,11 @@ import { getEnv } from "@/backend/config/env";
 export const ADMIN_DEVICE_COOKIE_NAME = "vq_admin_dev";
 export const ADMIN_DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 90; // 90 days
 
+// "dev|" domain-separates this signature from any other scheme that might ever sign a raw string
+// with the same ADMIN_SESSION_SECRET, so a value valid under one scheme can't be replayed as
+// valid under this one (review round 2, MINOR D).
 function sign(value: string, secret: string): string {
-  return createHmac("sha256", secret).update(value).digest("base64url");
+  return createHmac("sha256", secret).update(`dev|${value}`).digest("base64url");
 }
 
 /** `<adminId>.<nonce>.<hmac>` — issued fresh on every successful login (refreshes the 90 days). */

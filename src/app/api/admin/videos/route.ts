@@ -1,0 +1,5 @@
+import { withErrorHandling } from "@/backend/common/http/handler";
+import { getContainer } from "@/backend/container";
+
+export const GET = withErrorHandling(async (request) => getContainer().videoController.adminList(request));
+export const POST = withErrorHandling(async (request) => getContainer().videoController.adminCreate(request));

@@ -7,11 +7,11 @@ import { issueAdminCookieValue } from "@/backend/common/auth/admin-session";
 import { prisma } from "@/backend/lib/prisma";
 import { proxy } from "@/proxy";
 
-function req(path: string, cookie?: string): NextRequest {
+function req(path: string, cookie?: string, method = "GET"): NextRequest {
   const url = `http://localhost:3000${path}`;
   const headers = new Headers();
   if (cookie) headers.set("cookie", cookie);
-  return new NextRequest(url, { headers });
+  return new NextRequest(url, { headers, method });
 }
 
 describe("proxy — admin guard (plan §7)", () => {
@@ -60,10 +60,22 @@ describe("proxy — admin guard (plan §7)", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("/api/admin/auth/logout with a garbage cookie → 401, and clears vq_admin (review MINOR 4: this never reaches the controller)", async () => {
-    const res = await proxy(req("/api/admin/auth/logout", "vq_admin=not-a-jwt"));
+  it("POST /api/admin/auth/logout with a garbage cookie → 401, and clears vq_admin (review MINOR 4: this never reaches the controller)", async () => {
+    const res = await proxy(req("/api/admin/auth/logout", "vq_admin=not-a-jwt", "POST"));
     expect(res.status).toBe(401);
     expect(res.cookies.get("vq_admin")?.value).toBe("");
+  });
+
+  it("GET /api/admin/auth/logout does NOT clear the cookie, even with one present (review round 2 MINOR A: a cross-site <img> GET must not force a logout)", async () => {
+    const res = await proxy(req("/api/admin/auth/logout", "vq_admin=not-a-jwt", "GET"));
+    expect(res.status).toBe(401);
+    expect(res.cookies.get("vq_admin")).toBeUndefined();
+  });
+
+  it("POST /api/admin/auth/logout with NO cookie at all does not set a needless clearing Set-Cookie", async () => {
+    const res = await proxy(req("/api/admin/auth/logout", undefined, "POST"));
+    expect(res.status).toBe(401);
+    expect(res.cookies.get("vq_admin")).toBeUndefined();
   });
 
   it("a rejected /api/admin/videos request does NOT clear the cookie (only logout does)", async () => {

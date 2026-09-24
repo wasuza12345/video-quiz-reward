@@ -1,8 +1,9 @@
 // Which session POST /api/sessions resumes or creates (plan §4.3). Pure.
 import type { SessionState } from "@/shared/constants/session";
+import type { VideoStatus } from "@/shared/constants/video";
 import type { EventRecord, SessionSnapshot } from "./types";
 
-export type VideoStatus = "draft" | "published" | "archived";
+export type { VideoStatus };
 
 export interface ExistingSession {
   id: string;

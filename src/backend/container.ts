@@ -16,6 +16,11 @@ import { createRewardService } from "./modules/reward/reward.service";
 import { createAdminAuthController } from "./modules/admin-auth/admin-auth.controller";
 import { createAdminAuthRepository } from "./modules/admin-auth/admin-auth.repository";
 import { createAdminAuthService } from "./modules/admin-auth/admin-auth.service";
+import { createAdminQuestionController } from "./modules/quiz/quiz.controller";
+import { createAdminQuestionService } from "./modules/quiz/quiz.service";
+import { createAnalyticsController } from "./modules/analytics/analytics.controller";
+import { createAnalyticsRepository } from "./modules/analytics/analytics.repository";
+import { createAnalyticsService } from "./modules/analytics/analytics.service";
 
 export function createContainer() {
   const userRepo = createUserRepository();
@@ -24,12 +29,15 @@ export function createContainer() {
   const sessionRepo = createWatchSessionRepository();
   const rewardRepo = createRewardRepository();
   const adminAuthRepo = createAdminAuthRepository();
+  const analyticsRepo = createAnalyticsRepository();
 
   const userService = createUserService({ rewardRepo });
   const videoService = createVideoService({ videoRepo, rewardRepo });
   const watchSessionService = createWatchSessionService({ sessionRepo, videoRepo, quizRepo, userRepo });
   const rewardService = createRewardService({ rewardRepo, sessionRepo, videoRepo });
   const adminAuthService = createAdminAuthService({ adminAuthRepo });
+  const questionService = createAdminQuestionService({ quizRepo, videoRepo });
+  const analyticsService = createAnalyticsService({ analyticsRepo });
 
   return {
     userController: createUserController({ userService }),
@@ -37,6 +45,8 @@ export function createContainer() {
     watchSessionController: createWatchSessionController({ watchSessionService }),
     rewardController: createRewardController({ rewardService }),
     adminAuthController: createAdminAuthController({ adminAuthService }),
+    questionController: createAdminQuestionController({ questionService }),
+    analyticsController: createAnalyticsController({ analyticsService }),
   };
 }
 

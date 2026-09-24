@@ -27,7 +27,14 @@ async function adminGuard(request: NextRequest): Promise<NextResponse | null> {
     // A garbage/expired vq_admin cookie never even reaches the logout controller (this guard
     // rejects it first) — clear it here too so a logout call always leaves the browser with no
     // cookie, not just the case where the JWT was validly signed but DB-revoked (review MINOR 4).
-    if (request.nextUrl.pathname === ADMIN_LOGOUT_PATH) response.cookies.delete({ name: ADMIN_COOKIE_NAME, path: "/" });
+    // Gated on POST + the cookie actually being present on the request (review round 2, MINOR A):
+    // vq_admin is SameSite=Strict so a cross-site request never carries it regardless, but without
+    // this gate a bare cross-site GET (e.g. an <img> tag) to this path would still make the proxy
+    // *set* a clearing Set-Cookie header on its 401 — which the browser honors even though the
+    // request itself carried no cookie, silently logging the admin out from another tab.
+    if (request.nextUrl.pathname === ADMIN_LOGOUT_PATH && request.method === "POST" && request.cookies.has(ADMIN_COOKIE_NAME)) {
+      response.cookies.delete({ name: ADMIN_COOKIE_NAME, path: "/" });
+    }
     return response;
   }
   return NextResponse.redirect(new URL("/admin/login", request.url));

@@ -57,6 +57,25 @@ describe("login-throttle: reserveLoginAttempt (review MINOR 1: reserve-before-ch
     expect(status.blocked).toBe(false);
   });
 
+  it("review round 2 MINOR B: retries DURING an active lock don't push failCount up, so the lock's expiry buys a full fresh set of attempts", async () => {
+    const email = testEmail();
+    const ip = "5.5.5.6";
+    await failNTimes(email, ip, 6); // trips the lock on the 6th
+    expect((await reserveLoginAttempt(email, ip, { skipEmailCap: false })).blocked).toBe(true);
+
+    // Keep retrying while still locked — none of these may raise failCount above what a single
+    // post-expiry failure would need to re-trip the lock.
+    await failNTimes(email, ip, 10);
+    expect((await prisma.loginThrottle.findUniqueOrThrow({ where: { key: ipThrottleKey(email, ip) } })).failCount).toBe(0);
+
+    await prisma.loginThrottle.update({ where: { key: ipThrottleKey(email, ip) }, data: { lockedUntil: new Date(Date.now() - 1000) } });
+
+    // A single failure right after expiry must be allowed through — not immediately re-locked by
+    // the retries that happened while still locked.
+    const afterExpiry = await reserveLoginAttempt(email, ip, { skipEmailCap: false });
+    expect(afterExpiry.blocked).toBe(false);
+  });
+
   it("51 failures for the same email across rotating ips trip the email-wide limit (plan §7: stops IP rotation)", async () => {
     const email = testEmail();
     for (let i = 0; i < 51; i++) {

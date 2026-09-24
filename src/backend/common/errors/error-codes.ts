@@ -18,6 +18,9 @@ export const ERROR_CODES = [
   "VIDEO_LOCKED",
   "DUPLICATE_TRIGGER",
   "INVALID_TRIGGER",
+  "QUESTION_NOT_FOUND",
+  "USER_NOT_FOUND",
+  "SESSION_NOT_FOUND",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -38,4 +41,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   VIDEO_LOCKED: 409,
   DUPLICATE_TRIGGER: 409,
   INVALID_TRIGGER: 422,
+  QUESTION_NOT_FOUND: 404,
+  USER_NOT_FOUND: 404,
+  SESSION_NOT_FOUND: 404,
 };
