@@ -375,7 +375,7 @@ anything else (e.g. `SPEED_EXCEEDED` after a stall), the client closes the modal
 `max(0, furthestSec − (0.9 × durationSec − playedWallSec))` and keeps playing.
 
 **Server (the real guard) — `progress-validator.ts`:**
-Per event, in this order (P2 tests pin it): **(1) credit, then (2) bucket check, then (3) quiz gate.**
+Per event, in this order (P2 tests pin it): **(1) credit → (2) gate clamp → (3) bucket check → (4) gate transition.**
 1. **Play-time credit** — for every accepted event whose `fromState == PLAYING` (incl. PAUSE, TAB_HIDDEN and the TICK that
    enters QUIZ_PENDING): `Δ = min(serverAt − lastPlayingAt, 10)`; `playedWallSec += Δ`;
    `bankSec = min(bankSec + Δ × 1.1, 10)`; then `lastPlayingAt = serverAt` (or `null` when leaving PLAYING).

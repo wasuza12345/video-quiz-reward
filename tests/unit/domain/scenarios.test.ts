@@ -1,6 +1,6 @@
 // Whole-session simulations through the pure domain: a client batching TICKs every 5 s
 // (1 TICK per wall second), as in plan §4.2, against the brief video (44 s, quiz at 0:13).
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { applyAnswer, applyClientEvents } from "@/backend/domain/session-state-machine";
 import { canEnd, decideClaim } from "@/backend/domain/reward-policy";
 import type { ClientEvent, EventRecord, SessionSnapshot } from "@/backend/domain/types";
@@ -70,39 +70,73 @@ describe("scenarios", () => {
     expect(decideClaim(sim.s, true, 50)).toEqual({ ok: true, award: false }); // second claim
   });
 
-  it("honest viewer with jittered batch arrivals (+4, +4.5, +4, +6 s, …) gets 0 rejections and +50", () => {
+  // Content is decoupled from arrival: every batch carries exactly 5 s of video (five 1-s
+  // TICKs), regardless of how far apart in real (wall-clock) time the batches land. This is
+  // what actually exercises the bank as slack for irregular network timing — a version that
+  // advances position by the arrival gap itself would pass for (almost) any positive cap.
+  const JITTER_GAPS = [4, 4.5, 4, 6, 5.5];
+
+  function jitteredPlayTo(sim: Sim, gapState: { i: number; wall: number }, target: number) {
+    let pos = sim.s.positionSec;
+    while (pos < target) {
+      gapState.wall += JITTER_GAPS[gapState.i++ % JITTER_GAPS.length];
+      const steps = Math.min(5, target - pos);
+      const batch = Array.from({ length: steps }, (_, k) => ev("TICK", pos + k + 1));
+      sim.send(batch, gapState.wall);
+      pos = sim.s.positionSec;
+    }
+  }
+
+  it("honest viewer with jittered batch arrivals (5 s of content/batch, arriving every 4–6 s) gets 0 rejections and +50", () => {
     const sim = new Sim();
     sim.send([ev("PLAY", 0)], 0);
+    const gapState = { i: 0, wall: 0 };
 
-    const gaps = [4, 4.5, 4, 6];
-    let gapIdx = 0;
-    let wall = 0;
-    // Honest 1× playback, but flushed at irregular real-world intervals instead of a fixed 5 s
-    // cadence: position never advances faster than the reported wall-clock gap, so the bank
-    // (refilled at 1.1× per credited second, credited before the check) always covers it.
-    const playTo = (target: number) => {
-      let pos = sim.s.positionSec;
-      while (pos < target) {
-        const gap = gaps[gapIdx++ % gaps.length];
-        pos = Math.min(pos + gap, target);
-        wall += gap;
-        sim.send([ev("TICK", pos)], wall);
-      }
-    };
-
-    playTo(13);
+    jitteredPlayTo(sim, gapState, 13);
     expect(sim.s).toMatchObject({ state: "QUIZ_PENDING", positionSec: 13, currentQuestionId: "q1" });
     expect(sim.answer("D")).toBe(true);
 
-    wall += 5; // time spent on the quiz is not PLAYING time
-    sim.send([ev("PLAY", 13)], wall);
-    playTo(44);
-    sim.send([ev("ENDED", 44)], wall);
+    gapState.wall += 5; // time spent on the quiz is not PLAYING time
+    sim.send([ev("PLAY", 13)], gapState.wall);
+    jitteredPlayTo(sim, gapState, 44);
+    sim.send([ev("ENDED", 44)], gapState.wall);
 
     expect(sim.rejected()).toEqual([]);
     expect(sim.s.state).toBe("ENDED");
     expect(sim.s.flagged).toBe(false);
     expect(decideClaim(sim.s, false, 50)).toEqual({ ok: true, award: true, points: 50 });
+  });
+
+  it("control: the same jittered sequence starves under the old BANK_MAX_SEC = 6 — pins the cap at 10", async () => {
+    // Re-imports the real domain with TOLERANCES.BANK_MAX_SEC mocked to the pre-v5.2 value,
+    // so this exercises the actual checkTick/creditPlayTime code path, not a re-implementation.
+    vi.resetModules();
+    vi.doMock("@/shared/constants/session", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("@/shared/constants/session")>();
+      return { ...actual, TOLERANCES: { ...actual.TOLERANCES, BANK_MAX_SEC: 6 } };
+    });
+    try {
+      const { applyClientEvents: applyWithCap6 } = await import("@/backend/domain/session-state-machine");
+      const { session: mkSession, ev: mkEv, at: mkAt, NO_QUIZ: mkNoQuiz } = await import("./fixtures");
+
+      let s = mkSession({ state: "PLAYING", lastPlayingAt: mkAt(0) });
+      let wall = 0;
+      let sawRejection = false;
+      for (let i = 0; i < JITTER_GAPS.length * 3 && !sawRejection && s.positionSec < mkNoQuiz.durationSec; i++) {
+        wall += JITTER_GAPS[i % JITTER_GAPS.length];
+        const pos = s.positionSec;
+        const steps = Math.min(5, mkNoQuiz.durationSec - pos);
+        const batch = Array.from({ length: steps }, (_, k) => mkEv("TICK", pos + k + 1));
+        const r = applyWithCap6(s, mkNoQuiz, batch, mkAt(wall));
+        s = r.session;
+        if (r.events.some((e) => !e.accepted)) sawRejection = true;
+      }
+
+      expect(sawRejection).toBe(true);
+    } finally {
+      vi.doUnmock("@/shared/constants/session");
+      vi.resetModules();
+    }
   });
 
   it("setPlaybackRate(2): outruns the bank → SPEED_EXCEEDED, flagged at the 3rd soft reject, cannot end early", () => {
@@ -136,13 +170,13 @@ describe("scenarios", () => {
     expect(canEnd(sim.s, VIDEO)).toBe(false);
   });
 
-  it("rewatch then skip 20 s: the bank covers at most 6 s, the skip is rejected", () => {
+  it("rewatch then skip 20 s: the bank covers at most 10 s, the skip is rejected", () => {
     const sim = new Sim();
     sim.s = session({ passedQuestionIds: ["q1"] });
     sim.send([ev("PLAY", 0)], 0);
     let wall = watch(sim, 0, 0, 20); // honest to 20
     sim.send([ev("SEEK", 0)], wall);
-    wall = watch(sim, wall, 0, 20); // rewatch 0..20 (free), bank fills to 6
+    wall = watch(sim, wall, 0, 20); // rewatch 0..20 (free), bank fills to the max
     expect(sim.s.bankSec).toBe(TOLERANCES.BANK_MAX_SEC);
 
     const [seek] = sim.send([ev("SEEK", 40)], wall + 1);
