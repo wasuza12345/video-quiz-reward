@@ -1,8 +1,10 @@
-// Read-only row counts for the target DB (TURSO_DATABASE_URL if set, else DATABASE_URL file:).
+// Read-only row counts for the target DB: Turso when TURSO_DATABASE_URL is set and ALLOW_TURSO=1
+// (or VERCEL=1) — same selector as src/backend/config/env.ts — else DATABASE_URL file:.
 // Prints table counts only — never URL or token values.
 import { createClient } from "@libsql/client";
 
-const remote = !!process.env.TURSO_DATABASE_URL;
+const { TURSO_DATABASE_URL, ALLOW_TURSO, VERCEL } = process.env;
+const remote = !!TURSO_DATABASE_URL && (ALLOW_TURSO === "1" || VERCEL === "1");
 const client = createClient(
   remote
     ? { url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN }

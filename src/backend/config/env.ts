@@ -3,24 +3,28 @@ import { z } from "zod";
 // Treat `KEY=""` (as in .env.example) the same as an unset variable.
 const optionalString = z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).optional());
 
-// Turso when TURSO_DATABASE_URL is set (Vercel injects it); otherwise the local SQLite file.
+// The only Turso DB is production. Use it only on Vercel (VERCEL=1) or when a script opts in
+// with ALLOW_TURSO=1; otherwise the local SQLite file, even if TURSO_* is present (e.g. .env.local).
 const dbEnvSchema = z
   .object({
     DATABASE_URL: optionalString,
     TURSO_DATABASE_URL: optionalString,
     TURSO_AUTH_TOKEN: optionalString,
+    VERCEL: optionalString,
+    ALLOW_TURSO: optionalString,
   })
+  .transform((e) => ({ ...e, useTurso: !!e.TURSO_DATABASE_URL && (e.VERCEL === "1" || e.ALLOW_TURSO === "1") }))
   .superRefine((e, ctx) => {
-    if (e.TURSO_DATABASE_URL && !e.TURSO_AUTH_TOKEN) {
+    if (e.useTurso && !e.TURSO_AUTH_TOKEN) {
       ctx.addIssue({ code: "custom", path: ["TURSO_AUTH_TOKEN"], message: "required with TURSO_DATABASE_URL" });
     }
-    if (!e.TURSO_DATABASE_URL && !e.DATABASE_URL?.startsWith("file:")) {
-      ctx.addIssue({ code: "custom", path: ["DATABASE_URL"], message: "must be a file: URL when TURSO_DATABASE_URL is unset" });
+    if (!e.useTurso && !e.DATABASE_URL?.startsWith("file:")) {
+      ctx.addIssue({ code: "custom", path: ["DATABASE_URL"], message: "must be a file: URL when Turso is not selected" });
     }
   })
   .transform((e) =>
-    e.TURSO_DATABASE_URL
-      ? { url: e.TURSO_DATABASE_URL, authToken: e.TURSO_AUTH_TOKEN, isRemote: true }
+    e.useTurso
+      ? { url: e.TURSO_DATABASE_URL!, authToken: e.TURSO_AUTH_TOKEN, isRemote: true }
       : { url: e.DATABASE_URL!, authToken: undefined, isRemote: false },
   );
 

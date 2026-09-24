@@ -3,7 +3,8 @@ import { PrismaClient } from "../../generated/prisma/client";
 import { getDbEnv } from "../config/env";
 
 function createPrismaClient(): PrismaClient {
-  const { url, authToken } = getDbEnv();
+  const { url, authToken, isRemote } = getDbEnv();
+  console.info(`[db] using ${isRemote ? "turso" : "local file"}`);
   const adapter = new PrismaLibSql({ url, authToken });
   return new PrismaClient({ adapter });
 }
