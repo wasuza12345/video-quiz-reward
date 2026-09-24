@@ -10,6 +10,8 @@ import { expect, type Page } from "@playwright/test";
  */
 export async function clickPlayPause(page: Page, label: "เล่นวิดีโอ" | "หยุดชั่วคราว" = "เล่นวิดีโอ"): Promise<void> {
   const btn = page.getByRole("button", { name: label }).last();
-  await expect(btn).toBeEnabled({ timeout: 20_000 });
+  // Generous: this shared machine's load varies a lot run to run (many concurrent agents/tabs),
+  // and player init after a fresh navigation is the step most sensitive to that.
+  await expect(btn).toBeEnabled({ timeout: 40_000 });
   await btn.click();
 }

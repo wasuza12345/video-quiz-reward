@@ -3,7 +3,7 @@
 import { expect, test, type Response } from "@playwright/test";
 import { clickPlayPause } from "../helpers/watch";
 
-test.setTimeout(60_000);
+test.setTimeout(90_000);
 
 interface SessionBody {
   positionSec: number;
@@ -35,7 +35,7 @@ test("refresh mid-video resumes at the paused position, and the next TICK doesn'
   const resumed = await resumeResponse;
   expect(resumed.positionSec, "resuming mid-video should not report position 0").toBeGreaterThan(0);
 
-  await expect(page.getByText(/ดูต่อจาก/), "the resumed-position banner must show").toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/ดูต่อจาก/), "the resumed-position banner must show").toBeVisible({ timeout: 30_000 });
 
   const nextEventsResponse = captureFirstJson(page, (url, method) => method === "POST" && /\/api\/sessions\/[^/]+\/events$/.test(url.pathname));
   await clickPlayPause(page);
