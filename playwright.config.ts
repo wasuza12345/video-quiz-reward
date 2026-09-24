@@ -1,0 +1,44 @@
+import path from "node:path";
+import { defineConfig, devices } from "@playwright/test";
+import dotenv from "dotenv";
+
+dotenv.config({ path: path.resolve(__dirname, ".env.e2e") });
+
+const PORT = process.env.E2E_PORT ?? "3100";
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+
+// P6-early (API-level) E2E suite — plan §10. Real HTTP through proxy.ts against a fresh local
+// SQLite file DB (never Turso). Serial: several tests drive real wall-clock play time.
+export default defineConfig({
+  testDir: "./tests/e2e",
+  timeout: 120_000,
+  expect: { timeout: 10_000 },
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: [["list"], ["json", { outputFile: "test-results/e2e-report.json" }]],
+  use: {
+    baseURL: BASE_URL,
+  },
+  webServer: {
+    command: "bash scripts/e2e-server.sh",
+    url: `${BASE_URL}/api/videos`,
+    env: {
+      DATABASE_URL: process.env.DATABASE_URL ?? "file:./e2e.db",
+      ADMIN_SESSION_SECRET: process.env.ADMIN_SESSION_SECRET ?? "",
+      USER_COOKIE_SECRET: process.env.USER_COOKIE_SECRET ?? "",
+      ADMIN_EMAIL: process.env.ADMIN_EMAIL ?? "",
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ?? "",
+      PORT,
+    },
+    reuseExistingServer: false,
+    timeout: 60_000,
+    stdout: "pipe",
+    stderr: "pipe",
+  },
+  projects: [
+    { name: "api", testIgnore: /.*\.browser\.spec\.ts/ },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /.*\.browser\.spec\.ts/ },
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: /.*\.browser\.spec\.ts/ },
+  ],
+});
