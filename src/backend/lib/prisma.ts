@@ -1,6 +1,8 @@
 import { PrismaLibSql } from "@prisma/adapter-libsql";
-import { PrismaClient } from "../../generated/prisma/client";
+import { Prisma, PrismaClient } from "../../generated/prisma/client";
 import { getDbEnv } from "../config/env";
+
+export { Prisma };
 
 function createPrismaClient(): PrismaClient {
   const { url, authToken, isRemote } = getDbEnv();

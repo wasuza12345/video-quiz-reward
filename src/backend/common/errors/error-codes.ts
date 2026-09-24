@@ -1,0 +1,26 @@
+// Public API error codes (plan §4.1) and their HTTP status.
+
+export const ERROR_CODES = [
+  "VALIDATION_ERROR",
+  "BODY_TOO_LARGE",
+  "VIDEO_NOT_FOUND",
+  "NOT_OWNER",
+  "SEQ_CONFLICT",
+  "EVENT_LIMIT",
+  "INVALID_CHOICE",
+  "NOT_AT_QUIZ",
+  "NOT_ENDED",
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export const ERROR_STATUS: Record<ErrorCode, number> = {
+  VALIDATION_ERROR: 400,
+  BODY_TOO_LARGE: 413,
+  VIDEO_NOT_FOUND: 404,
+  NOT_OWNER: 403,
+  SEQ_CONFLICT: 409,
+  EVENT_LIMIT: 429,
+  INVALID_CHOICE: 400,
+  NOT_AT_QUIZ: 409,
+  NOT_ENDED: 422,
+};

@@ -45,3 +45,10 @@ export const TOLERANCES = {
   MIN_PLAYED_RATIO: 0.9,
   SOFT_REJECT_FLAG_AT: 3,
 } as const;
+
+/** POST /api/sessions/:id/events caps (plan §4.2). */
+export const EVENT_CAPS = {
+  MAX_EVENTS_PER_REQUEST: 20,
+  MAX_EVENTS_PER_SESSION: 2000,
+  MAX_BODY_BYTES: 16 * 1024,
+} as const;
