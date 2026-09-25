@@ -5,6 +5,13 @@
 // idempotent: one YT.Player per container. Destroy it in cleanup and null the ref." This is the
 // one file in the suite that needs a DOM at all, so it opts into jsdom per-file rather than
 // switching the whole project's default environment (vitest.config.mts stays "node").
+//
+// FakePlayer replaces its target element with the <iframe>, matching the real YT IFrame API (it
+// does not append the iframe inside the element it's given). A later planner review caught that
+// the hook's own idempotency guard had been written against the wrong shape — a
+// `container.querySelector("iframe")` check that can never match in a real browser — and this
+// harness originally matched that same wrong assumption. The hook now tracks the live instance in
+// a ref instead; this fake keeps the DOM shape honest so a similar guard can't regress silently.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,18 +22,17 @@ import { useYouTubePlayer } from "@/frontend/public/hooks/useYouTubePlayer";
 class FakePlayer {
   static instances: FakePlayer[] = [];
   destroyed = false;
-  private container: HTMLElement;
+  private iframe: HTMLIFrameElement;
   private events: { onReady: () => void };
 
   constructor(container: HTMLElement, opts: { events: { onReady: () => void } }) {
-    this.container = container;
     this.events = opts.events;
     FakePlayer.instances.push(this);
-    // Real YT.Player replaces the container's contents with an iframe (see VideoPlayer's
-    // .yt-player-container comment) and fires onReady asynchronously, once the iframe's own
-    // postMessage handshake completes — never synchronously inside the constructor.
-    const iframe = document.createElement("iframe");
-    container.appendChild(iframe);
+    // Real YT.Player *replaces* the target element with the <iframe> — it does not append one
+    // inside it — and fires onReady asynchronously, once the iframe's own postMessage handshake
+    // completes, never synchronously inside the constructor.
+    this.iframe = document.createElement("iframe");
+    container.replaceWith(this.iframe);
     queueMicrotask(() => this.events.onReady());
   }
 
@@ -42,13 +48,23 @@ class FakePlayer {
   setPlaybackRate() {}
   destroy() {
     this.destroyed = true;
-    this.container.querySelectorAll("iframe").forEach((el) => el.remove());
+    this.iframe.remove();
   }
 }
 
 function Harness({ youtubeId }: { youtubeId: string }) {
   const { containerRef } = useYouTubePlayer({ youtubeId, title: "t", onStateChange: () => {}, onError: () => {} });
-  return <div ref={containerRef} />;
+  // Mirrors VideoPlayer.tsx: containerRef's div is nested inside a wrapper React itself always
+  // owns and never hands to YT.Player. Without that wrapper, React's own unmount would try to
+  // remove the containerRef div directly from this test's root — but FakePlayer (like the real
+  // YT.Player) already replaced it in the DOM, so that removeChild throws NotFoundError. The real
+  // app never hits this because .yt-player-container is never itself the node React add/removes;
+  // its wrapper is.
+  return (
+    <div>
+      <div ref={containerRef} />
+    </div>
+  );
 }
 
 let container: HTMLDivElement;

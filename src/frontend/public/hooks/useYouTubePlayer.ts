@@ -13,7 +13,7 @@ export interface YTPlayer {
   destroy(): void;
 }
 
-export const YT_PLAYER_STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2, CUED: 5 } as const;
+export const YT_PLAYER_STATE = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 } as const;
 
 export interface YTNamespace {
   Player: new (
@@ -83,6 +83,11 @@ export interface UseYouTubePlayerResult {
  */
 export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: UseYouTubePlayerOptions): UseYouTubePlayerResult {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Tracks the live instance across this effect invocation. Not a DOM query: the real YT IFrame
+  // API *replaces* the target element with its <iframe> (it doesn't append one inside it), so
+  // `containerRef.current.querySelector("iframe")` can never match in a real browser — planner
+  // review round on the "refresh disables Play forever" fix.
+  const instanceRef = useRef<YTPlayer | null>(null);
   const [player, setPlayer] = useState<YTPlayer | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
@@ -102,10 +107,11 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
 
     loadYouTubeIframeApi()
       .then((YT) => {
-        // Idempotency guard: never create a second player on a container that already has one
-        // (defence in depth against any future refactor that decouples this effect's cleanup
-        // from its own re-run — review round, planner lead (b)).
-        if (cancelled || !containerRef.current || containerRef.current.querySelector("iframe")) return;
+        // Idempotency guard: never create a second player while one is already alive for this
+        // effect invocation (defence in depth against any future refactor that decouples this
+        // effect's cleanup from its own re-run — review round, planner lead (b)). Tracked via a
+        // ref, not a DOM query — see the comment on instanceRef above.
+        if (cancelled || !containerRef.current || instanceRef.current) return;
         instance = new YT.Player(containerRef.current, {
           videoId: youtubeId,
           playerVars: {
@@ -130,6 +136,7 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
             onPlaybackRateChange: () => instance?.setPlaybackRate(1),
           },
         });
+        instanceRef.current = instance;
       })
       .catch(() => {
         if (!cancelled) setError(true);
@@ -138,6 +145,7 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
     return () => {
       cancelled = true;
       instance?.destroy();
+      instanceRef.current = null;
       setPlayer(null);
       setReady(false);
     };

@@ -123,10 +123,19 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // and — since that swallow returns before setAutoResuming(false) — autoResuming gets stuck
   // true, permanently disabling the Play/Pause control (the same symptom, a different trigger;
   // found by planner review after the first fix). Disarmed by: consuming a spurious PLAYING, the
-  // next PAUSED/CUED state, a ~1.5s backstop timeout, or any programmatic playVideo() we make on
-  // purpose (which always clears it first, since a real play should never be swallowed).
+  // next settled (non-BUFFERING, non-UNSTARTED) state, a ~5s backstop timeout, or any programmatic
+  // playVideo() we make on purpose (which always clears it first, since a real play should never
+  // be swallowed).
+  //
+  // The backstop is a pure safety net, not the primary disarm path — a real state change always
+  // wins if it arrives first. It has to be generous: real instrumentation on the quirk showed an
+  // asynchronous UNSTARTED -> BUFFERING -> UNSTARTED -> PLAYING sequence, and a slow buffer can
+  // easily outlast a short timer, which would disarm the guard *before* the quirk's own PLAYING
+  // lands — letting it straight through as if it were a real, user-initiated play (planner review
+  // round: this exact race was observed with the original 1.5s timeout).
   const suppressAutoplayAfterSeekRef = useRef(false);
   const suppressAutoplayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const AUTOPLAY_GUARD_BACKSTOP_MS = 5000;
 
   const armAutoplayGuard = useCallback(() => {
     suppressAutoplayAfterSeekRef.current = true;
@@ -134,7 +143,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
     suppressAutoplayTimeoutRef.current = setTimeout(() => {
       suppressAutoplayAfterSeekRef.current = false;
       suppressAutoplayTimeoutRef.current = null;
-    }, 1500);
+    }, AUTOPLAY_GUARD_BACKSTOP_MS);
   }, []);
 
   const clearAutoplayGuard = useCallback(() => {
@@ -143,6 +152,38 @@ export function WatchPage({ videoId }: WatchPageProps) {
       clearTimeout(suppressAutoplayTimeoutRef.current);
       suppressAutoplayTimeoutRef.current = null;
     }
+  }, []);
+
+  // Backstops autoResuming: set true the instant the quiz auto-resume timer fires (see below), it
+  // must come back to false once the player actually confirms PLAYING. If playVideo() never
+  // yields PLAYING — e.g. iOS/Safari silently blocking playback that lacks a user gesture — the
+  // Play/Pause control would stay disabled forever with no way for the user to recover. This
+  // timeout clears it after a few seconds so a manual tap can take over (planner review round).
+  const autoResumingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const AUTO_RESUMING_BACKSTOP_MS = 3000;
+
+  const armAutoResumingBackstop = useCallback(() => {
+    if (autoResumingTimeoutRef.current !== null) clearTimeout(autoResumingTimeoutRef.current);
+    autoResumingTimeoutRef.current = setTimeout(() => {
+      setAutoResuming(false);
+      autoResumingTimeoutRef.current = null;
+    }, AUTO_RESUMING_BACKSTOP_MS);
+  }, []);
+
+  const clearAutoResumingBackstop = useCallback(() => {
+    if (autoResumingTimeoutRef.current !== null) {
+      clearTimeout(autoResumingTimeoutRef.current);
+      autoResumingTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Both timeouts above are refs, not tied to any single effect's cleanup — clear them on unmount
+  // so a late timer never calls setState after the component is gone.
+  useEffect(() => {
+    return () => {
+      if (suppressAutoplayTimeoutRef.current !== null) clearTimeout(suppressAutoplayTimeoutRef.current);
+      if (autoResumingTimeoutRef.current !== null) clearTimeout(autoResumingTimeoutRef.current);
+    };
   }, []);
 
   // --- player state changes drive both the reducer and the server write (plan §6) ---
@@ -157,18 +198,28 @@ export function WatchPage({ videoId }: WatchPageProps) {
           return;
         }
         setAutoResuming(false);
+        clearAutoResumingBackstop();
         dispatch({ type: "PLAY_CLICKED" });
         void writer.sendImmediate("PLAY", currentTime);
+      } else if (ytState === YT_PLAYER_STATE.BUFFERING || ytState === YT_PLAYER_STATE.UNSTARTED) {
+        // Transitional states the seek quirk passes through on its way to the eventual spurious
+        // PLAYING (real instrumentation: UNSTARTED -> BUFFERING -> UNSTARTED -> PLAYING) — must
+        // NOT disarm the guard here, or the quirk's own PLAYING would slip through unswallowed.
+        // Intentionally a no-op; only a settled state (PLAYING/PAUSED/CUED/ENDED) or the backstop
+        // timeout above disarms an armed guard.
       } else if (ytState === YT_PLAYER_STATE.PAUSED || ytState === YT_PLAYER_STATE.CUED) {
         clearAutoplayGuard();
         if (ytState === YT_PLAYER_STATE.CUED) return;
         setAutoResuming(false);
+        clearAutoResumingBackstop();
         // The gate-hit flow (useWatchTracker) already calls player.pauseVideo() and sends its
         // own PAUSE — skip the duplicate this onStateChange(PAUSED) would otherwise send (MINOR 4).
         if (trackerApi.isGateInFlight()) return;
         dispatch({ type: "PAUSE_CLICKED" });
         void writer.sendImmediate("PAUSE", currentTime);
       } else if (ytState === YT_PLAYER_STATE.ENDED) {
+        clearAutoplayGuard();
+        clearAutoResumingBackstop();
         dispatch({ type: "VIDEO_ENDED" });
         const durationSec = state.video?.durationSec ?? 0;
         void writer.sendImmediate("ENDED", currentTime).then((result) => {
@@ -209,13 +260,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
     const t = setTimeout(() => {
       dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT" });
       setAutoResuming(true);
+      armAutoResumingBackstop();
       // A stale guard from an earlier non-autoplaying seek (e.g. a TICK-overshoot clamp while the
       // quiz was open) must not swallow THIS intentional play — clear it first.
       clearAutoplayGuard();
       player?.playVideo();
     }, 900);
     return () => clearTimeout(t);
-  }, [state.status, state.feedback, player, clearAutoplayGuard]);
+  }, [state.status, state.feedback, player, clearAutoplayGuard, armAutoResumingBackstop]);
 
   // --- auto-claim once ended (rows 5, 18) ---
   useEffect(() => {
