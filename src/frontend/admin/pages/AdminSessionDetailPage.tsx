@@ -41,7 +41,7 @@ function Fact({ label, value, sub, tone }: { label: string; value: React.ReactNo
     <div>
       <p style={{ fontSize: "var(--fs-xs)", color: "var(--text-2)", margin: "0 0 4px" }}>{label}</p>
       <p style={{ fontSize: "var(--fs-md)", fontWeight: 600, color, margin: 0 }}>{value}</p>
-      {sub && <p style={{ fontSize: "var(--fs-xs)", color: "var(--text-2)", margin: "2px 0 0" }}>{sub}</p>}
+      {sub && <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-2)", margin: "2px 0 0" }}>{sub}</div>}
     </div>
   );
 }

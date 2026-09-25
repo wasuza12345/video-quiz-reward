@@ -26,6 +26,16 @@ test("admin login: wrong password shows an error, correct password reaches the d
 });
 
 test("create video → publish → feature → shows on / → session timeline → locked fields → logout", async ({ page }) => {
+  // Planner review: AdminSessionDetailPage's Fact component used to wrap `sub` in a <p>, and the
+  // playedWallSec Fact passes a <ProgressBar> (renders a <div>) as sub — a <div> nested in a <p>
+  // is invalid HTML, so React logged it as 2 separate console errors on every session detail page
+  // (the Next dev overlay's "2 issues"). Collected for the whole test; checked around the session
+  // detail page visit below.
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+
   await exposeYouTubePlayerOnWindow(page);
   await adminLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD);
 
@@ -53,7 +63,7 @@ test("create video → publish → feature → shows on / → session timeline �
     });
 
   try {
-    await runAdminCrudFlow(page, videoTitle, briefVideoId);
+    await runAdminCrudFlow(page, videoTitle, briefVideoId, consoleErrors);
   } finally {
     await restoreBriefVideoAsFeatured();
   }
@@ -68,7 +78,7 @@ test("create video → publish → feature → shows on / → session timeline �
   });
 });
 
-async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitle: string, briefVideoId: string): Promise<void> {
+async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitle: string, briefVideoId: string, consoleErrors: string[]): Promise<void> {
   await test.step("create a video from a YouTube URL", async () => {
     await page.goto("/admin/videos/new");
     // The preview player only mounts once youtubeUrl parses to an id — fill it first.
@@ -176,8 +186,16 @@ async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitl
     const pointsText = await rewardedRow.locator("td").last().innerText();
     const points = Number(pointsText.replace(/[^\d]/g, ""));
 
+    const consoleErrorsBeforeDetail = consoleErrors.length;
     await rewardedRow.getByRole("link").first().click();
     await page.waitForURL(/\/admin\/sessions\/[0-9a-f-]{20,}$/, { timeout: 10_000 });
+
+    // playedWallSec's Fact renders a <ProgressBar> (a <div>) as `sub` — used to be wrapped in a
+    // <p>, invalid HTML that logged 2 console errors on every visit (the dev overlay's "2 issues").
+    expect(
+      consoleErrors.slice(consoleErrorsBeforeDetail),
+      "the session detail page must log 0 console errors",
+    ).toEqual([]);
 
     // .first(): desktop table + mobile list both render in the DOM at once.
     const collapsedGroup = page.getByRole("button", { name: /ความคืบหน้า ×/ }).first();
