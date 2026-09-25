@@ -76,7 +76,7 @@ export function createWatchSessionService(deps: {
   return {
     async createOrResume(userId, videoId) {
       const video = await deps.videoRepo.findById(videoId);
-      if (!video || video.status === "draft") throw new AppError("VIDEO_NOT_FOUND", "video not found");
+      if (!video) throw new AppError("VIDEO_NOT_FOUND", "video not found");
 
       const existing = await deps.sessionRepo.findExistingForUserVideo(userId, videoId);
       const videoRewarded = existing.some((s) => s.rewarded);

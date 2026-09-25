@@ -1,5 +1,5 @@
-// Public API request contracts (plan §4.1, §4.2) plus the response shapes backend services
-// return, mirrored here so the frontend can type against them without importing `backend/`.
+// Public API request contracts (plan §4.1, §4.2) plus the response shapes for the session
+// endpoints. Backend and frontend both import these from here — this is their single definition.
 import { z } from "zod";
 import { CLIENT_EVENT_TYPES, EVENT_CAPS } from "@/shared/constants/session";
 import type { ClientEventType, RejectReason, SessionState } from "@/shared/constants/session";
