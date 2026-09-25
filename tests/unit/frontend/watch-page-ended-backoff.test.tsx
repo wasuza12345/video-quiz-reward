@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// Planner review round 5 follow-up, MINOR (a): once the ENDED_NOT_WATCHED recovery's tight-loop
-// cap is hit, the backstop retry's delay was `(remainingWatchSec + 1) * 1000` ms — when
+// Once the ENDED_NOT_WATCHED recovery's tight-loop cap is hit, the backstop retry's delay
+// used to be `(remainingWatchSec + 1) * 1000` ms — when
 // remainingWatchSec is 0 (the player genuinely can't move; it's furthestSec, not playedWallSec,
 // that's short, or the player is simply stuck), that's 1s, INSIDE ENDED_RECOVERY_TIGHT_WINDOW_SEC
 // (2s). Every backstop-triggered attempt then landed inside the tight window of the one before
@@ -14,7 +14,7 @@
 // no-op — no further onStateChange of its own) so every ENDED send after the first burst is driven
 // purely by the recovery's own setTimeout chain, isolating exactly the mechanism under test from
 // real playback timing. A mock server that always rejects ENDED with remainingWatchSec: 0 matches
-// the MINOR's own precondition.
+// the precondition this bug needs (a player that genuinely can't move).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,7 +52,7 @@ vi.mock("@/frontend/public/services/api", () => ({
     createSession: () => Promise.resolve(SESSION_RESPONSE),
     postAnswer: () => Promise.reject(new Error("not used in this test")),
     postClaim: () => Promise.reject(new Error("not used in this test")),
-    // Always NOT_WATCHED, remainingWatchSec always 0 — the MINOR (a) precondition: the player
+    // Always NOT_WATCHED, remainingWatchSec always 0 — the player
     // genuinely can't move, so every recovery attempt fails identically, forever.
     postEvents: (_sessionId: string, events: Array<{ seq: number; type: ClientEventType; positionSec: number }>): Promise<EventsApplyResponse> => {
       postEventsCalls.push(...events.map((e) => ({ type: e.type, positionSec: e.positionSec })));
@@ -148,7 +148,7 @@ async function wait(ms: number) {
   });
 }
 
-describe("WatchPage: ENDED recovery backstop backoff (planner review round 5 follow-up MINOR (a), must fail on ba8e673)", () => {
+describe("WatchPage: ENDED recovery backstop backoff", () => {
   it("bounded ENDED sends over 60s when the player can't move", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => root.render(<WatchPage videoId="v1" />));
@@ -172,7 +172,7 @@ describe("WatchPage: ENDED recovery backstop backoff (planner review round 5 fol
     expect(endedAfterBurst, "the manual burst must have reached the tight-loop cap").toBe(3);
 
     // From here on, nothing but the recovery's own setTimeout chain can produce another ENDED —
-    // the player itself never reacts on its own. Real 60s window, matching the MINOR's own ask.
+    // the player itself never reacts on its own.
     for (let i = 0; i < 60; i++) {
       await wait(1_000);
       await flush();

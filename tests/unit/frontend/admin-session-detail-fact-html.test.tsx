@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Reviewer MINOR on the AdminSessionDetailPage Fact fix: the E2E console-error assertion can't
+// The E2E console-error assertion can't
 // actually catch a <div>-nested-in-<p> React warning, because Playwright's api/ui-desktop projects
 // run a PRODUCTION `next build` (React strips validateDOMNesting and every other dev-only warning
 // in production), and the page itself renders server-first anyway. Only a real client-side render
@@ -32,7 +32,7 @@ afterEach(() => {
   container.remove();
 });
 
-describe("Fact (planner review, reviewer MINOR: must fail if sub is wrapped back in a <p>)", () => {
+describe("Fact (must fail if sub is wrapped back in a <p>)", () => {
   it("rendering a ProgressBar as sub logs 0 console errors (valid HTML: no <div> nested in a <p>)", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {

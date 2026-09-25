@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Planner review round 5 follow-up, MINOR (b): the quiz auto-resume's player.playVideo() call and
+// The quiz auto-resume's player.playVideo() call and
 // the real player's own onStateChange(PLAYING) confirmation are independently-async (a real
 // postMessage round trip, same as every other player call in this suite) — nothing orders them.
 // If the tab is backgrounded in that gap (after playVideo() fires but before PLAYING lands),
@@ -201,7 +201,7 @@ function playButton(): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>(`button[aria-label="${copy.controlBar.playAriaLabel}"]`);
 }
 
-describe("WatchPage: hidden tab during the auto-resume's own PLAYING confirmation (planner review round 5 follow-up MINOR (b), must fail on ba8e673)", () => {
+describe("WatchPage: hidden tab during the auto-resume's own PLAYING confirmation", () => {
   it("tab hidden after playVideo() but before PLAYING lands: the late confirmation is paused and reported, never accepted as real playback", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => root.render(<WatchPage videoId="v1" />));
