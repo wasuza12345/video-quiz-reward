@@ -31,6 +31,44 @@ test("create video → publish → feature → shows on / → session timeline �
 
   const videoTitle = `P6b admin test ${Date.now()}`;
 
+  // Looked up up front (not inside a later step) so the finally-block restore below can run even
+  // if this test fails before ever reaching the step that used to compute it — this test's own
+  // "feature" step permanently changes the sitewide featured video, and every project in a run
+  // shares one webServer/DB, so any later test that clicks the featured card would otherwise be
+  // silently poisoned by whichever admin test video/failure state this one left behind.
+  const user = new UserSession(page.request);
+  const briefVideo = await findVideoByYoutubeId(user, BRIEF_VIDEO_YOUTUBE_ID);
+  const briefVideoId = briefVideo.id;
+
+  const restoreBriefVideoAsFeatured = () =>
+    test.step("restore the seeded brief video as featured (runs even on failure — see comment above)", async () => {
+      await page.goto(`/admin/videos/${briefVideoId}`);
+      const alreadyFeatured = await page
+        .getByText("★ คลิปแนะนำ")
+        .isVisible()
+        .catch(() => false);
+      if (alreadyFeatured) return;
+      await page.getByRole("button", { name: "ตั้งเป็นคลิปแนะนำ" }).click();
+      await expect(page.getByText("★ คลิปแนะนำ")).toBeVisible({ timeout: 10_000 });
+    });
+
+  try {
+    await runAdminCrudFlow(page, videoTitle, briefVideoId);
+  } finally {
+    await restoreBriefVideoAsFeatured();
+  }
+
+  await test.step("logout redirects to the login page, and /admin then requires logging in again", async () => {
+    await page.getByRole("button", { name: "ออกจากระบบ" }).click();
+    await page.waitForURL(/\/admin\/login\?reason=logout/, { timeout: 10_000 });
+    await expect(page.getByText("ออกจากระบบเรียบร้อยแล้วค่ะ")).toBeVisible();
+
+    await page.goto("/admin");
+    await page.waitForURL(/\/admin\/login/, { timeout: 10_000 });
+  });
+});
+
+async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitle: string, briefVideoId: string): Promise<void> {
   await test.step("create a video from a YouTube URL", async () => {
     await page.goto("/admin/videos/new");
     // The preview player only mounts once youtubeUrl parses to an id — fill it first.
@@ -87,7 +125,6 @@ test("create video → publish → feature → shows on / → session timeline �
     await expect(page.locator("a.featured-card")).toContainText(videoTitle, { timeout: 10_000 });
   });
 
-  let briefVideoId = "";
   let flaggedSessionId = "";
   await test.step("manufacture a flagged/rejected session (real HTTP) for the reject/flag timeline check", async () => {
     // UserSession, not raw page.request: APIRequestContext — even page.request, bound to this
@@ -96,10 +133,7 @@ test("create video → publish → feature → shows on / → session timeline �
     // page.goto() navigation does (proxy-secure-cookie.browser.spec.ts), but plain page.request
     // calls apparently don't share that. UserSession manages the cookie itself instead.
     const user = new UserSession(page.request);
-    const video = await findVideoByYoutubeId(user, BRIEF_VIDEO_YOUTUBE_ID);
-    briefVideoId = video.id;
-
-    const created = await createSession(user, video.id);
+    const created = await createSession(user, briefVideoId);
     const { sessionId } = (await created.json()) as { sessionId: string };
     flaggedSessionId = sessionId;
     await postEvents(user, sessionId, [{ seq: 1, type: "PLAY", positionSec: 0 }]);
@@ -171,20 +205,4 @@ test("create video → publish → feature → shows on / → session timeline �
     await expect(page.getByRole("button", { name: "ลบคำถาม" })).toBeDisabled();
     await expect(page.getByLabel("ลิงก์ YouTube")).toHaveAttribute("readonly", "");
   });
-
-  await test.step("restore the seeded brief video as featured (this test's own 'feature' step above otherwise leaves the wrong video — and its own trigger time/choices — globally featured for every test that shares this webServer/DB and runs after this one)", async () => {
-    await page.goto(`/admin/videos/${briefVideoId}`);
-    const featureBtn = page.getByRole("button", { name: "ตั้งเป็นคลิปแนะนำ" });
-    await featureBtn.click();
-    await expect(page.getByText("★ คลิปแนะนำ")).toBeVisible({ timeout: 10_000 });
-  });
-
-  await test.step("logout redirects to the login page, and /admin then requires logging in again", async () => {
-    await page.getByRole("button", { name: "ออกจากระบบ" }).click();
-    await page.waitForURL(/\/admin\/login\?reason=logout/, { timeout: 10_000 });
-    await expect(page.getByText("ออกจากระบบเรียบร้อยแล้วค่ะ")).toBeVisible();
-
-    await page.goto("/admin");
-    await page.waitForURL(/\/admin\/login/, { timeout: 10_000 });
-  });
-});
+}
