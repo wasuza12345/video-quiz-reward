@@ -14,7 +14,7 @@ import { RewardCard } from "../components/RewardCard";
 import { HowItWorks } from "../components/HowItWorks";
 import { formatTime, watch as copy } from "../constants/copy.th";
 import { api, ApiError } from "../services/api";
-import { initialWatchState, watchReducer, WATCH_ERRORS } from "../state/watch.reducer";
+import { initialWatchState, watchMachine, WATCH_ERRORS } from "../state/watch.machine";
 import { selectCurrentQuestion, selectIsPlaying, selectPlayButtonEnabled, selectStatusLineCopy } from "../state/watch.selectors";
 import { useSessionWriter } from "../hooks/useSessionWriter";
 import { useWatchTracker } from "../hooks/useWatchTracker";
@@ -40,16 +40,17 @@ function VideoTitle({ video }: { video: { title: string; channelName: string } }
 
 export function WatchPage({ videoId }: WatchPageProps) {
   const router = useRouter();
-  const [state, dispatch] = useReducer(watchReducer, initialWatchState);
-  const writer = useSessionWriter(state.sessionId, state.lastSeq, dispatch);
-  const { visible: toast, dismissSticky } = useToast(state.toastRequest);
+  const [state, dispatch] = useReducer(watchMachine, initialWatchState);
+  const sessionId = state.session?.id ?? null;
+  const writer = useSessionWriter(sessionId, state.session?.lastSeq ?? 0, dispatch);
+  const { visible: toast, dismissSticky } = useToast(state.toast);
 
   const onPlayRef = useRef<(positionSec: number) => void>(() => {});
   const onPauseRef = useRef<(positionSec: number) => void>(() => {});
   const onEndedRef = useRef<(positionSec: number) => void>(() => {});
   const { containerRef, player, ready: playerReady, error: playerError } = useYouTubePlayer({
-    youtubeId: state.video?.youtubeId ?? "",
-    title: youtubePlayerTitle(state.video?.title ?? ""),
+    youtubeId: state.session?.video.youtubeId ?? "",
+    title: youtubePlayerTitle(state.session?.video.title ?? ""),
     onPlay: (pos) => onPlayRef.current(pos),
     onPause: (pos) => onPauseRef.current(pos),
     onEnded: (pos) => onEndedRef.current(pos),
@@ -97,19 +98,19 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   // --- "taking a while" notice ---
   useEffect(() => {
-    if (state.status !== "loading") return;
+    if (state.phase.kind !== "loading") return;
     const t = setTimeout(() => dispatch({ type: "LOADING_SLOW" }), 8000);
     return () => clearTimeout(t);
-  }, [state.status]);
+  }, [state.phase.kind]);
 
   const trackerApi = useWatchTracker({
     player,
-    active: state.status === "playing",
-    sessionId: state.sessionId,
-    furthestSec: state.furthestSec,
-    pendingSeekTo: state.pendingSeekTo,
-    quizzes: state.quizzes,
-    passedQuestionIds: state.passedQuestionIds,
+    active: state.phase.kind === "playing",
+    sessionId,
+    furthestSec: state.session?.furthestSec ?? 0,
+    pendingSeekTo: state.seekRequest?.toSec ?? null,
+    quizzes: state.session?.quizzes ?? [],
+    passedQuestionIds: state.session?.passedQuestionIds ?? [],
     writer,
     dispatch,
   });
@@ -164,29 +165,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
       endedRecoveryRetryTimeoutRef.current = null;
     }
     clearAutoResumingBackstop();
-  }, [state.sessionId, clearAutoResumingBackstop]);
+  }, [sessionId, clearAutoResumingBackstop]);
 
-  // --- drop a stale autoplay guard on a fresh session. Separate from the bookkeeping reset above
-  // (keyed on sessionId only) so this doesn't also fire — harmlessly, but needlessly — whenever
-  // `player` itself changes identity (becomes ready, or a youtubeId/title change remounts it). An
-  // in-app replay reuses the same player instance, still possibly guard-armed from the just-ended
-  // previous session's own pendingSeekTo-to-0 seek; that guard must not carry over.
-  //
-  // ORDERING: must be declared (and therefore run) BEFORE the pendingSeekTo effect further down.
-  // A fresh SESSION_LOADED always sets a new pendingSeekTo too, so both effects fire in the same
-  // commit — pendingSeekTo's own player.seekTo() call is the authoritative last word on the
-  // guard's armed/cleared state for the new session's seek. If this effect ran after it instead,
-  // it would silently clear a guard that seekTo() just correctly armed. See
-  // watch-page-reset-guard-ordering.test.tsx, which pins this via call order on the adapter. ---
-  useEffect(() => {
-    player?.resetGuard();
-  }, [state.sessionId, player]);
   // autoResuming reset via React's documented "adjust state during render" pattern (not an effect
   // — a synchronous setState in an effect body is a lint error; a ref read during render is too —
   // and this way never even paints the stale value for a frame).
-  const [autoResumingSessionId, setAutoResumingSessionId] = useState(state.sessionId);
-  if (autoResumingSessionId !== state.sessionId) {
-    setAutoResumingSessionId(state.sessionId);
+  const [autoResumingSessionId, setAutoResumingSessionId] = useState(sessionId);
+  if (autoResumingSessionId !== sessionId) {
+    setAutoResumingSessionId(sessionId);
     if (autoResuming) setAutoResuming(false);
   }
 
@@ -262,9 +248,9 @@ export function WatchPage({ videoId }: WatchPageProps) {
     onPlayRef.current = (currentTime: number) => {
       // Hidden-tab edge: if the tab was backgrounded after the quiz auto-resume's own play() call
       // but before this PLAYING confirmation arrived (both real, independently-async postMessage
-      // round trips — nothing orders them), state.status was still "paused"/"quiz_open" the whole
-      // time, so the separate visibilitychange handler's own status==="playing" guard never fired
-      // for it — the real player would otherwise keep playing in the background, unseen and
+      // round trips — nothing orders them), state.phase.kind was still "paused"/"quiz" the whole
+      // time, so the separate visibilitychange handler's own phase.kind==="playing" guard never
+      // fired for it — the real player would otherwise keep playing in the background, unseen and
       // unreported, until the user comes back. Catch it here instead: never accept a PLAYING
       // confirmation while hidden.
       if (document.visibilityState === "hidden") {
@@ -306,18 +292,21 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // otherwise stay paused. The adapter owns the ENDED-unstick quirk (seekTo() alone is a no-op
   // once ENDED) and the autoplay-after-seek guard for the "stay paused" case.
   //
-  // ORDERING: this seekTo() call must run AFTER the resetGuard() effect above (they always fire
-  // in the same commit on a fresh SESSION_LOADED) — this call is the last word on the guard's
-  // state for the new seek, so it must not be undone by a stale-guard reset that runs later. ---
+  // freshSession (set only for the seek that follows a brand-new SESSION_LOADED) resets any stale
+  // autoplay guard from the just-ended previous session — an in-app replay reuses the same player
+  // instance, still possibly guard-armed from its own pendingSeekTo-to-0 seek — right before this
+  // same call issues the new seek, so reset-then-arm happens atomically in one place instead of
+  // depending on effect declaration order. See watch-page-fresh-session-seek.test.tsx. ---
   useEffect(() => {
-    if (state.pendingSeekTo === null || !player) return;
-    player.seekTo(state.pendingSeekTo, { resume: state.status === "playing" });
+    if (!state.seekRequest || !player) return;
+    if (state.seekRequest.freshSession) player.resetGuard();
+    player.seekTo(state.seekRequest.toSec, { resume: state.seekRequest.resume });
     dispatch({ type: "SEEK_CONSUMED" });
-  }, [state.pendingSeekTo, state.status, player]);
+  }, [state.seekRequest, player]);
 
   // --- auto-resume 900ms after a correct answer (row 13) ---
   useEffect(() => {
-    if (state.status !== "quiz_open" || state.feedback?.tone !== "correct") return;
+    if (state.phase.kind !== "quiz" || state.phase.feedback?.tone !== "correct") return;
     const t = setTimeout(() => {
       const hidden = document.visibilityState === "hidden";
       dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT", hidden });
@@ -334,13 +323,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
       player?.play();
     }, 900);
     return () => clearTimeout(t);
-  }, [state.status, state.feedback, player, armAutoResumingBackstop]);
+  }, [state.phase, player, armAutoResumingBackstop]);
 
   // --- auto-claim once ended (rows 5, 18) ---
+  const claimError = state.phase.kind === "claiming" && state.phase.failed;
   useEffect(() => {
-    if (state.status !== "claiming" || !state.sessionId) return;
-    if (claimAttemptedRef.current === state.sessionId && !state.claimError) return;
-    claimAttemptedRef.current = state.sessionId;
+    if (state.phase.kind !== "claiming" || !sessionId) return;
+    if (claimAttemptedRef.current === sessionId && !claimError) return;
+    claimAttemptedRef.current = sessionId;
     void writer.sendClaim().then((result) => {
       if ("failed" in result) {
         dispatch(result.reason === "not_ended" ? { type: "CLAIM_NOT_ENDED" } : { type: "CLAIM_FAILED" });
@@ -348,7 +338,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
         dispatch({ type: "CLAIM_ACCEPTED", result });
       }
     });
-  }, [state.status, state.sessionId, state.claimError, writer]);
+  }, [state.phase.kind, sessionId, claimError, writer]);
 
   // --- offline/online ---
   useEffect(() => {
@@ -365,17 +355,17 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // --- tab hidden: pause + a best-effort TAB_HIDDEN send when nothing else is in flight ---
   useEffect(() => {
     const onVisibility = () => {
-      // Gated on status === "playing", matching the reducer's own TAB_HIDDEN guard — calling
+      // Gated on phase.kind === "playing", matching the reducer's own TAB_HIDDEN guard — calling
       // player.pauseVideo() unconditionally used to pause the REAL player even while, say, the
-      // quiz modal was open waiting on the 900ms auto-resume timer (status "quiz_open", not
-      // "playing" yet). That pause and the auto-resume's own later playVideo() could then race:
-      // if the (now-stale) PAUSED event from this pause arrived AFTER the auto-resume's PLAYING
-      // one, PAUSE_CLICKED's own guard (only "status !== playing" — no staleness check) would
-      // wrongly flip status back to "paused" with no real pause ever having been issued for that,
+      // quiz modal was open waiting on the 900ms auto-resume timer (phase "quiz", not "playing"
+      // yet). That pause and the auto-resume's own later playVideo() could then race: if the
+      // (now-stale) PAUSED event from this pause arrived AFTER the auto-resume's PLAYING one,
+      // PAUSE_CLICKED's own guard (only "phase.kind !== playing" — no staleness check) would
+      // wrongly flip the phase back to "paused" with no real pause ever having been issued for that,
       // permanently stopping useWatchTracker's rAF/TICK loop while the real player kept playing
       // (one observed case: 30s with zero TICKs after an honest answer). Nothing meaningful to
       // pause here anyway while not "playing".
-      if (document.visibilityState !== "hidden" || !player || state.status !== "playing") return;
+      if (document.visibilityState !== "hidden" || !player || state.phase.kind !== "playing") return;
       const currentTime = player.currentTime();
       dispatch({ type: "TAB_HIDDEN" });
       player.pause();
@@ -383,13 +373,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [player, writer, state.status]);
+  }, [player, writer, state.phase.kind]);
 
   const handleToggle = useCallback(() => {
     if (!player || !selectPlayButtonEnabled(state) || autoResuming) return;
     // A real user gesture always wins over the seek guard, in case it's still armed — player.play()
     // clears it on its own.
-    if (state.status === "playing") player.pause();
+    if (state.phase.kind === "playing") player.pause();
     else player.play();
   }, [player, state, autoResuming]);
 
@@ -413,30 +403,42 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   const handleRetry = useCallback(() => {
     dispatch({ type: "RETRY_REQUESTED" });
-    if (state.status === "error") loadSession();
-  }, [state.status, loadSession]);
+    if (state.phase.kind === "error") loadSession();
+  }, [state.phase.kind, loadSession]);
 
-  const pointsBadge = <PointsBadge totalPoints={state.totalPoints} unavailable={state.pointsUnavailable} />;
+  const pointsBadge = <PointsBadge totalPoints={state.points.total} unavailable={state.points.unavailable} />;
 
-  if (state.status === "error" && state.error) {
+  if (state.phase.kind === "error") {
+    const error = state.phase.error;
     return (
       <>
         <PublicHeader showBack pointsBadge={pointsBadge} />
         <main style={{ maxWidth: "var(--max-width-watch)", margin: "0 auto", padding: "var(--gutter)" }}>
           <ErrorState
-            title={state.error.title}
-            body={state.error.body}
-            action={{ label: state.error.action, onClick: state.error === WATCH_ERRORS.videoNotFound ? () => router.push("/") : handleRetry }}
-            secondaryAction={state.error.secondaryAction ? { label: state.error.secondaryAction, onClick: () => router.push("/") } : undefined}
+            title={error.title}
+            body={error.body}
+            action={{ label: error.action, onClick: error === WATCH_ERRORS.videoNotFound ? () => router.push("/") : handleRetry }}
+            secondaryAction={error.secondaryAction ? { label: error.secondaryAction, onClick: () => router.push("/") } : undefined}
           />
         </main>
       </>
     );
   }
 
+  const video = state.session?.video ?? null;
+  const quizzes = state.session?.quizzes ?? [];
+  const passedQuestionIds = state.session?.passedQuestionIds ?? [];
   const currentQuestion = selectCurrentQuestion(state);
-  const questionNumber = currentQuestion ? state.quizzes.findIndex((q) => q.id === currentQuestion.id) + 1 : 0;
+  const questionNumber = currentQuestion ? quizzes.findIndex((q) => q.id === currentQuestion.id) + 1 : 0;
   const isPlaying = selectIsPlaying(state);
+  const showResumedBanner = state.phase.kind === "ready" && state.phase.resumedAtSec !== null;
+  const endedFallback = state.phase.kind === "playing" && state.phase.endedFallback;
+  const replayEndNotice = state.phase.kind === "rewarded" && state.phase.replayEnd;
+  const claimResult = state.phase.kind === "rewarded" ? state.phase.result : null;
+  const quizStep = state.phase.kind === "quiz" ? state.phase.step : null;
+  const pendingChoice = state.phase.kind === "quiz" ? state.phase.pendingChoice : null;
+  const wrongChoiceLabels = state.phase.kind === "quiz" ? state.phase.wrongChoices : [];
+  const feedback = state.phase.kind === "quiz" ? state.phase.feedback : null;
   // reloadingInPlace (an in-app replay, no page reload — REPLAY_REQUESTED) must NOT show the
   // loading skeleton in place of <VideoPlayer>: useYouTubePlayer's effect depends only on
   // [youtubeId, title], so a same-video replay never reruns it and reuses the existing player
@@ -446,20 +448,20 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // <VideoPlayer> remounts with a NEW container div — confirmed against real Chrome: this, not
   // the seekTo-alone-on-ENDED quirk, was the actual reason an early replay-restart fix still
   // failed in a real browser.
-  const isLoading = state.status === "loading" && !state.reloadingInPlace;
+  const isLoading = state.phase.kind === "loading" && !state.phase.reloadingInPlace;
 
   return (
     <>
       <PublicHeader showBack pointsBadge={pointsBadge} />
       <main aria-busy={isLoading} style={{ maxWidth: "var(--max-width-watch)", margin: "0 auto", padding: "var(--gutter)", display: "flex", flexDirection: "column", gap: 12 }}>
-        {!isLoading && state.video && (
+        {!isLoading && video && (
           <div className="watch-title-desktop">
-            <VideoTitle video={state.video} />
+            <VideoTitle video={video} />
           </div>
         )}
 
-        {state.showResumedBanner && state.video && <ContextBanner tone="info">{copy.contextBanner.resumed(formatTime(state.positionSec))}</ContextBanner>}
-        {state.showReplayBanner && !state.showResumedBanner && <ContextBanner tone="info">{copy.contextBanner.replayStart}</ContextBanner>}
+        {showResumedBanner && video && <ContextBanner tone="info">{copy.contextBanner.resumed(formatTime(state.session?.positionSec ?? 0))}</ContextBanner>}
+        {state.showReplayBanner && !showResumedBanner && <ContextBanner tone="info">{copy.contextBanner.replayStart}</ContextBanner>}
 
         {isLoading ? (
           <div style={{ aspectRatio: "16/9", borderRadius: "var(--radius-media)", overflow: "hidden" }}>
@@ -470,67 +472,67 @@ export function WatchPage({ videoId }: WatchPageProps) {
         ) : (
           <VideoPlayer
             containerRef={containerRef}
-            showCentrePlay={!isPlaying && state.status !== "quiz_open" && state.status !== "ended" && state.status !== "claiming"}
+            showCentrePlay={!isPlaying && state.phase.kind !== "quiz" && state.phase.kind !== "ending" && state.phase.kind !== "claiming"}
             onShieldClick={handleToggle}
             shieldLabel={isPlaying ? copy.controlBar.pauseAriaLabel : copy.controlBar.playAriaLabel}
           />
         )}
 
-        {!isLoading && state.video && (
+        {!isLoading && video && (
           <>
             <LiveControlBar
               player={player}
-              active={state.status === "playing"}
-              fallbackPositionSec={state.positionSec}
-              fallbackFurthestSec={state.furthestSec}
+              active={state.phase.kind === "playing"}
+              fallbackPositionSec={state.session?.positionSec ?? 0}
+              fallbackFurthestSec={state.session?.furthestSec ?? 0}
               getMaxReached={trackerApi.getMaxReached}
               isPlaying={isPlaying}
               enabled={selectPlayButtonEnabled(state) && playerReady && !autoResuming}
               onToggle={handleToggle}
-              durationSec={state.video.durationSec}
-              quizzes={state.quizzes}
-              passedQuestionIds={state.passedQuestionIds}
+              durationSec={video.durationSec}
+              quizzes={quizzes}
+              passedQuestionIds={passedQuestionIds}
             />
             <StatusLine text={selectStatusLineCopy(state)} />
 
-            {state.inlineNotice === "ended_fallback" && <InlineNotice tone="info">{copy.inlineNotice.endedFallback}</InlineNotice>}
-            {state.claimError && (
+            {endedFallback && <InlineNotice tone="info">{copy.inlineNotice.endedFallback}</InlineNotice>}
+            {claimError && (
               <InlineNotice tone="danger" action={{ label: copy.inlineNotice.claimFailed.action, onClick: () => dispatch({ type: "RETRY_REQUESTED" }) }}>
                 {copy.inlineNotice.claimFailed.title}
               </InlineNotice>
             )}
 
-            {state.status === "rewarded" && state.claimResult?.awarded && (
+            {state.phase.kind === "rewarded" && claimResult?.awarded && (
               <RewardCard
-                points={state.claimResult.points}
-                totalPoints={state.claimResult.totalPoints}
+                points={claimResult.points}
+                totalPoints={claimResult.totalPoints}
                 onRewatch={handleReplay}
                 onOtherVideos={() => router.push("/")}
               />
             )}
-            {state.status === "rewarded" && state.inlineNotice === "replay_end" && (
+            {replayEndNotice && (
               <InlineNotice tone="info" action={{ label: copy.replayEnd.watchAgain, onClick: handleReplay }}>
                 {copy.inlineNotice.replayEnd}
               </InlineNotice>
             )}
 
-            <QuizProgress quizzes={state.quizzes} passedQuestionIds={state.passedQuestionIds} />
+            <QuizProgress quizzes={quizzes} passedQuestionIds={passedQuestionIds} />
             <div className="watch-title-mobile">
-              <VideoTitle video={state.video} />
+              <VideoTitle video={video} />
             </div>
             <HowItWorks />
           </>
         )}
 
         <QuizModal
-          open={state.status === "quiz_open" && currentQuestion !== null}
+          open={state.phase.kind === "quiz" && currentQuestion !== null}
           question={currentQuestion}
           questionNumber={questionNumber || 1}
-          totalQuestions={state.quizzes.length}
-          phase={state.quizPhase}
-          pendingChoice={state.pendingChoice}
-          wrongChoiceLabels={state.wrongChoiceLabels}
-          feedback={state.feedback}
+          totalQuestions={quizzes.length}
+          phase={quizStep}
+          pendingChoice={pendingChoice}
+          wrongChoiceLabels={wrongChoiceLabels}
+          feedback={feedback}
           onChoose={handleChoice}
         />
       </main>

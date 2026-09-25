@@ -5,7 +5,7 @@ import { watch as copy } from "../constants/copy.th";
 import { ChoiceButton, type ChoiceStatus } from "./ChoiceButton";
 import { Modal } from "@/frontend/shared/ui/Modal";
 import { Spinner } from "@/frontend/shared/ui/Button";
-import type { QuizPhase } from "../state/watch.reducer";
+import type { QuizStep } from "../state/watch.machine";
 import type { PublicQuestion } from "@/shared/contracts/session";
 
 export interface QuizModalProps {
@@ -13,14 +13,14 @@ export interface QuizModalProps {
   question: PublicQuestion | null;
   questionNumber: number;
   totalQuestions: number;
-  phase: QuizPhase;
+  phase: QuizStep | null;
   pendingChoice: string | null;
   wrongChoiceLabels: string[];
   feedback: { tone: "wrong" | "correct" | "error"; message: string } | null;
   onChoose: (label: string) => void;
 }
 
-function choiceStatus(label: string, phase: QuizPhase, pendingChoice: string | null, wrongChoiceLabels: string[]): ChoiceStatus {
+function choiceStatus(label: string, phase: QuizStep | null, pendingChoice: string | null, wrongChoiceLabels: string[]): ChoiceStatus {
   if (phase === "submitting" && pendingChoice === label) return "submitting";
   if (wrongChoiceLabels.includes(label)) return "wrong";
   return "default";

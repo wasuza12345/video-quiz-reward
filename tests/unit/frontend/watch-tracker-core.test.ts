@@ -115,7 +115,7 @@ describe("WatchTracker — 20s of honest 1× playback with periodic server syncs
    * This is the exact bug found in production: the seek guard
    * compared against the reducer's server-synced furthestSec, which only moved every ~5s (and,
    * separately, never moved at all for a new session because accepted responses were never
-   * dispatched anywhere — see EVENTS_SYNCED in watch.reducer.ts). A quick reproduction of that
+   * dispatched anywhere — see EVENTS_SYNCED in watch.machine.ts). A quick reproduction of that
    * exact old formula (see /tmp reproduction script, not part of this codebase) against this same
    * 20s honest-playback sequence: the seek guard fires 13 times and playback never gets past
    * ~1.5s. `WatchTracker` fixes this by tracking its OWN local high-water mark every frame,

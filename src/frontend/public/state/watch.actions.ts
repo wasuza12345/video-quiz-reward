@@ -1,4 +1,4 @@
-// Actions the reducer in watch.reducer.ts responds to (plan §8, spec.md §4.4).
+// Actions the reducer in watch.machine.ts responds to (plan §8, spec.md §4.4).
 import type { AnswerResponse, ClaimResponse, SessionCreateResponse, SessionState } from "@/shared/contracts/session";
 import type { MeResponse } from "@/shared/contracts/video";
 

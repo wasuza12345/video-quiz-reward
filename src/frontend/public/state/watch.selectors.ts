@@ -1,45 +1,48 @@
 // Pure derived values from WatchState — components read these instead of re-deriving copy/flags.
 import { formatTime, watch as copy } from "../constants/copy.th";
 import { nextUnpassedQuestion } from "@/shared/rules/quiz-gate";
-import type { WatchState } from "./watch.reducer";
+import type { WatchState } from "./watch.machine";
 
 export function selectPlayButtonEnabled(state: WatchState): boolean {
-  return state.status === "ready" || state.status === "playing" || state.status === "paused";
+  return state.phase.kind === "ready" || state.phase.kind === "playing" || state.phase.kind === "paused";
 }
 
 export function selectIsPlaying(state: WatchState): boolean {
-  return state.status === "playing";
+  return state.phase.kind === "playing";
 }
 
 export function selectNextQuestion(state: WatchState) {
-  return nextUnpassedQuestion(state.quizzes, state.passedQuestionIds);
+  return nextUnpassedQuestion(state.session?.quizzes ?? [], state.session?.passedQuestionIds ?? []);
 }
 
 export function selectCurrentQuestion(state: WatchState) {
-  return state.quizzes.find((q) => q.id === state.currentQuestionId) ?? null;
+  const phase = state.phase;
+  if (phase.kind !== "quiz" || !state.session) return null;
+  return state.session.quizzes.find((q) => q.id === phase.questionId) ?? null;
 }
 
 export function selectStatusLineCopy(state: WatchState): string {
-  switch (state.status) {
+  const phase = state.phase;
+  switch (phase.kind) {
     case "loading":
-      return state.loadingSlow ? copy.loading.slow : copy.loading.initial;
+      return phase.slow ? copy.loading.slow : copy.loading.initial;
     case "ready":
-      return state.showResumedBanner ? copy.statusLine.readyResumed : copy.statusLine.readyNew(state.quizzes.length, state.video?.rewardPoints ?? 0);
+      return phase.resumedAtSec !== null ? copy.statusLine.readyResumed : copy.statusLine.readyNew(state.session?.quizzes.length ?? 0, state.session?.video.rewardPoints ?? 0);
     case "playing": {
-      if (state.inlineNotice === "ended_fallback") return copy.statusLine.endedFallback;
+      if (phase.endedFallback) return copy.statusLine.endedFallback;
       const next = selectNextQuestion(state);
       if (next) return copy.statusLine.playingNextQuiz(formatTime(next.triggerSec));
-      if (state.quizzes.length === 0) return copy.statusLine.playingNoQuizzes;
+      if ((state.session?.quizzes.length ?? 0) === 0) return copy.statusLine.playingNoQuizzes;
       return copy.statusLine.playingAllPassed;
     }
     case "paused":
-      return state.pausedByTabHidden ? copy.statusLine.pausedTabHidden : copy.statusLine.paused;
-    case "ended":
+      return phase.reason === "tab_hidden" ? copy.statusLine.pausedTabHidden : copy.statusLine.paused;
+    case "ending":
       return copy.statusLine.ended;
     case "claiming":
-      return state.isReplay || state.alreadyRewarded ? copy.statusLine.claiming : copy.statusLine.claimingResumed;
+      return state.session?.isReplay || state.session?.alreadyRewarded ? copy.statusLine.claiming : copy.statusLine.claimingResumed;
     case "rewarded":
-      return state.isReplay ? copy.statusLine.replayNew(state.quizzes.length) : "";
+      return state.session?.isReplay ? copy.statusLine.replayNew(state.session.quizzes.length) : "";
     default:
       return "";
   }

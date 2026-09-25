@@ -5,8 +5,9 @@
 // The seek guard compares against a LOCAL high-water mark this class owns, NOT the reducer's
 // server-synced furthestSec — that only moves on a ~5s flush cadence, so comparing against it
 // directly snaps honest playback back every ~1.5s after every sync. Worse, prior to the
-// EVENTS_SYNCED fix in watch.reducer.ts, accepted responses were never dispatched anywhere at
-// all, so furthestSec could stay at its initial value (often 0) for an entire session — every
+// EVENTS_SYNCED fix in the reducer (now watch.machine.ts), accepted responses were never
+// dispatched anywhere at all, so furthestSec could stay at its initial value (often 0) for an
+// entire session — every
 // honest viewer hit the guard every ~1.5s, forever. `reconcile()` is the only thing that ever
 // lowers this class's high-water mark; call it on a corrective server response (rejection,
 // conflict, gate fallback, ended fallback) — a normal accepted sync never should.
