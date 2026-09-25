@@ -1,8 +1,5 @@
 // Plain factory wiring (no DI library — plan §2). One instance per process; repositories share
 // the single `prisma` singleton, so this is cheap to construct more than once too.
-import { createUserController } from "./modules/user/user.controller";
-import { createUserRepository } from "./modules/user/user.repository";
-import { createUserService } from "./modules/user/user.service";
 import { createVideoController } from "./modules/video/video.controller";
 import { createVideoRepository } from "./modules/video/video.repository";
 import { createVideoService } from "./modules/video/video.service";
@@ -23,7 +20,6 @@ import { createAnalyticsRepository } from "./modules/analytics/analytics.reposit
 import { createAnalyticsService } from "./modules/analytics/analytics.service";
 
 export function createContainer() {
-  const userRepo = createUserRepository();
   const videoRepo = createVideoRepository();
   const quizRepo = createQuizRepository();
   const sessionRepo = createWatchSessionRepository();
@@ -31,16 +27,14 @@ export function createContainer() {
   const adminAuthRepo = createAdminAuthRepository();
   const analyticsRepo = createAnalyticsRepository();
 
-  const userService = createUserService({ rewardRepo });
   const videoService = createVideoService({ videoRepo, rewardRepo });
-  const watchSessionService = createWatchSessionService({ sessionRepo, videoRepo, quizRepo, userRepo });
+  const watchSessionService = createWatchSessionService({ sessionRepo, videoRepo, quizRepo });
   const rewardService = createRewardService({ rewardRepo, sessionRepo, videoRepo });
   const adminAuthService = createAdminAuthService({ adminAuthRepo });
   const questionService = createAdminQuestionService({ quizRepo, videoRepo });
   const analyticsService = createAnalyticsService({ analyticsRepo });
 
   return {
-    userController: createUserController({ userService }),
     videoController: createVideoController({ videoService }),
     watchSessionController: createWatchSessionController({ watchSessionService }),
     rewardController: createRewardController({ rewardService }),

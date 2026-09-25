@@ -37,7 +37,11 @@ export interface EventInput extends EventRecord {
 }
 
 export interface WatchSessionRepository {
+  /** Upsert-create; a no-op if the row already exists (plan §4.1: upserted on first POST /api/sessions). */
+  ensureUser(userId: string): Promise<void>;
   findById(id: string): Promise<SessionRow | null>;
+  /** `null` when the session doesn't exist or belongs to a different user — the one ownership check every endpoint needs. */
+  findOwned(sessionId: string, userId: string): Promise<SessionRow | null>;
   /** All of this user's sessions for this video, any state, for resume-policy (plan §4.3). */
   findExistingForUserVideo(userId: string, videoId: string): Promise<ExistingSession[]>;
   create(userId: string, videoId: string, isReplay: boolean): Promise<SessionRow>;

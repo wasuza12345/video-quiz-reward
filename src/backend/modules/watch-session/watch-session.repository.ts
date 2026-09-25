@@ -68,9 +68,18 @@ function snapshotData(s: SessionSnapshot) {
 
 export function createWatchSessionRepository(): WatchSessionRepository {
   return {
+    async ensureUser(userId) {
+      await prisma.user.upsert({ where: { id: userId }, create: { id: userId }, update: {} });
+    },
+
     async findById(id) {
       const row = await prisma.watchSession.findUnique({ where: { id } });
       return row ? toRow(row) : null;
+    },
+
+    async findOwned(sessionId, userId) {
+      const row = await prisma.watchSession.findUnique({ where: { id: sessionId } });
+      return row && row.userId === userId ? toRow(row) : null;
     },
 
     async findExistingForUserVideo(userId, videoId): Promise<ExistingSession[]> {

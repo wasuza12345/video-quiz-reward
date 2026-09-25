@@ -5,7 +5,6 @@ import { AppError } from "@/backend/common/errors/app-error";
 import { EVENT_CAPS } from "@/shared/constants/session";
 import type { AnswerResponse, EventsApplyResponse, PostEventsBody, PublicQuestion, SessionCreateResponse, SessionResponseVideo } from "@/shared/contracts/session";
 import type { QuizRepository } from "../quiz/quiz.interface";
-import type { UserRepository } from "../user/user.interface";
 import type { VideoRepository, VideoRow } from "../video/video.interface";
 import type { EventInput, SessionRow, WatchSessionRepository } from "./watch-session.interface";
 
@@ -45,11 +44,10 @@ export function createWatchSessionService(deps: {
   sessionRepo: WatchSessionRepository;
   videoRepo: VideoRepository;
   quizRepo: QuizRepository;
-  userRepo: UserRepository;
 }): WatchSessionService {
   async function loadOwned(sessionId: string, userId: string): Promise<SessionRow> {
-    const row = await deps.sessionRepo.findById(sessionId);
-    if (!row || row.userId !== userId) throw new AppError("NOT_OWNER", "not your session");
+    const row = await deps.sessionRepo.findOwned(sessionId, userId);
+    if (!row) throw new AppError("NOT_OWNER", "not your session");
     return row;
   }
 
@@ -83,7 +81,7 @@ export function createWatchSessionService(deps: {
       const decision = decideResume(video.status, existing, videoRewarded);
       if (decision.action === "not_found") throw new AppError("VIDEO_NOT_FOUND", "video not found");
 
-      await deps.userRepo.ensure(userId);
+      await deps.sessionRepo.ensureUser(userId);
       const session =
         decision.action === "resume" ? await resumeSession(decision.sessionId) : await deps.sessionRepo.create(userId, videoId, decision.isReplay);
 

@@ -2,7 +2,6 @@
 // channelName = author_name, embeddable)"). oEmbed succeeding is itself the embeddable check — it
 // 404s for private/deleted/embed-disabled videos (plan §0's verified fact: the brief video is
 // "embeddable (oEmbed OK)"). The id parser itself lives in shared/youtube-id.ts.
-export { parseYoutubeId } from "@/shared/youtube-id";
 
 export interface YoutubeOembed {
   title: string;

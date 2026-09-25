@@ -9,5 +9,10 @@ export function createRewardController(deps: { rewardService: RewardService }) {
       const userId = requireUserId(request);
       return ok(await deps.rewardService.claim(sessionId, userId));
     },
+
+    async getMe(request: NextRequest) {
+      const userId = requireUserId(request);
+      return ok(await deps.rewardService.getMe(userId));
+    },
   };
 }

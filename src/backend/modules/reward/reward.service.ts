@@ -1,12 +1,14 @@
 import { decideClaim } from "@/backend/domain/reward-policy";
 import { AppError } from "@/backend/common/errors/app-error";
 import type { ClaimResponse } from "@/shared/contracts/session";
+import type { MeResponse } from "@/shared/contracts/video";
 import type { VideoRepository } from "../video/video.interface";
 import type { WatchSessionRepository } from "../watch-session/watch-session.interface";
 import type { RewardRepository } from "./reward.interface";
 
 export interface RewardService {
   claim(sessionId: string, userId: string): Promise<ClaimResponse>;
+  getMe(userId: string): Promise<MeResponse>;
 }
 
 export function createRewardService(deps: {
@@ -16,8 +18,8 @@ export function createRewardService(deps: {
 }): RewardService {
   return {
     async claim(sessionId, userId) {
-      const row = await deps.sessionRepo.findById(sessionId);
-      if (!row || row.userId !== userId) throw new AppError("NOT_OWNER", "not your session");
+      const row = await deps.sessionRepo.findOwned(sessionId, userId);
+      if (!row) throw new AppError("NOT_OWNER", "not your session");
 
       const video = await deps.videoRepo.findById(row.videoId);
       if (!video) throw new AppError("VIDEO_NOT_FOUND", "video not found");
@@ -52,5 +54,7 @@ export function createRewardService(deps: {
       const { totalPoints } = await deps.rewardRepo.getUserSummary(userId);
       return { awarded: outcome.awarded, points: outcome.points, totalPoints };
     },
+
+    getMe: (userId) => deps.rewardRepo.getUserSummary(userId),
   };
 }

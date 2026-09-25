@@ -1,7 +1,8 @@
 import { Prisma } from "@/backend/lib/prisma";
 import { AppError } from "@/backend/common/errors/app-error";
 import type { AuditContext } from "@/backend/common/audit/audit-log";
-import { fetchYoutubeOembed, parseYoutubeId } from "@/backend/lib/youtube";
+import { fetchYoutubeOembed } from "@/backend/lib/youtube";
+import { parseYoutubeId } from "@/shared/youtube-id";
 import type { AdminCreateVideoBody, AdminUpdateVideoBody, AdminVideoDetail, AdminVideoListItem, Paged } from "@/shared/contracts/admin";
 import type { PublicVideoItem, VideoListResponse } from "@/shared/contracts/video";
 import type { RewardRepository } from "../reward/reward.interface";
