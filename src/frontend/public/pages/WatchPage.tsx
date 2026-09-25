@@ -217,7 +217,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
     onPlayRef.current = (currentTime: number) => {
       // Hidden-tab edge: if the tab was backgrounded after the quiz auto-resume's own play() call
       // but before this PLAYING confirmation arrived (both real, independently-async postMessage
-      // round trips — nothing orders them), state.phase.kind was still "paused"/"quiz" the whole
+      // round trips — nothing orders them), state.phase.kind was still "quiz"/"resuming" the whole
       // time, so the separate visibilitychange handler's own phase.kind==="playing" guard never
       // fired for it — the real player would otherwise keep playing in the background, unseen and
       // unreported, until the user comes back. Catch it here instead: never accept a PLAYING

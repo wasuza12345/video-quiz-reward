@@ -20,6 +20,10 @@
 //     applies as a same-tick batch, where the old effect-time read could see a LATER action in the
 //     batch's outcome that a dispatch-time bake can't — no observed real-world case, but named
 //     here since it's a genuine (if narrow) behavioral difference.
+//  6. TAB_HIDDEN during "resuming" (#12b) now lands on paused/tab_hidden, with Play enabled
+//     immediately. Before #12b, this same window was paused/user (autoResuming was a separate
+//     WatchPage flag TAB_HIDDEN's dispatch never touched), so Play stayed disabled until the 3s
+//     backstop cleared it. See watch.machine.test.ts:272.
 //
 // #12b: the ~900ms auto-resume-after-correct-answer window is a top-level Phase ("resuming"), not
 // a QuizStep — the quiz modal has already closed (QUIZ_RESUME_AFTER_CORRECT always leaves "quiz")
