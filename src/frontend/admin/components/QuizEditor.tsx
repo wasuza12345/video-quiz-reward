@@ -72,7 +72,7 @@ interface QuestionCardProps {
   tempKey: string;
 }
 
-// Exported for tests/unit/frontend/admin-form-a11y.test.tsx (review round 3 MINOR 5: label association).
+// Exported for tests/unit/frontend/admin-form-a11y.test.tsx (label association).
 export function QuestionCard({ question, videoId, durationSec, locked, previewReady, previewHandle, previewCurrentTime, existingTriggers, defaultExpanded, onSaved, onDeleted, tempKey }: QuestionCardProps) {
   const router = useRouter();
   const triggerId = useId();
@@ -92,7 +92,7 @@ export function QuestionCard({ question, videoId, durationSec, locked, previewRe
   const setField = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
 
   // "ใช้เวลาปัจจุบัน" needs actual playback progress to be meaningful — at t=0 it would just set
-  // every new question's trigger to 0:00.0 (review round 3 MINOR 6).
+  // every new question's trigger to 0:00.0.
   const currentTimeDisabled = locked || !previewReady || previewCurrentTime <= 0;
   const currentTimeHint = !previewReady ? copy.useCurrentTimeDisabledPreview : previewCurrentTime <= 0 ? copy.useCurrentTimeDisabledZero : undefined;
 

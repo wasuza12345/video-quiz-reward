@@ -96,12 +96,12 @@ export function createVideoRepository(): VideoRepository {
     },
 
     async update(id, input: UpdateVideoInput, audit, requireUnlocked) {
-      // One interactive transaction (review round 3): the lock gate (when present) and the audit
+      // One interactive transaction: the lock gate (when present) and the audit
       // row commit together — see the equivalent comment on quiz.repository.ts's `update` for why
       // this is an accepted exception to plan §9's no-interactive-transaction rule.
       return prisma.$transaction(async (tx) => {
         if (requireUnlocked) {
-          // The write itself is the atomic conditional check (review round 2 MINOR 3) — not a
+          // The write itself is the atomic conditional check — not a
           // separate probe followed by a plain update, which would leave its own small gap. A
           // session created concurrently makes this match 0 rows instead of applying `input`.
           const result = await tx.video.updateMany({ where: { id, sessions: { none: {} } }, data: input });
@@ -122,7 +122,7 @@ export function createVideoRepository(): VideoRepository {
           data: {
             status,
             publishedAt: status === "published" ? new Date() : undefined,
-            // Archiving retires a video from the public list entirely — it can't stay "the" featured one (review round 2 MINOR 4).
+            // Archiving retires a video from the public list entirely — it can't stay "the" featured one.
             isFeatured: status === "archived" ? false : undefined,
           },
           include: ADMIN_COUNTS,

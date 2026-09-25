@@ -63,11 +63,11 @@ export function createQuizRepository(): QuizRepository {
     },
 
     async update(id, input: UpdateQuestionInput, audit, requireUnlocked) {
-      // One interactive transaction (review round 3): the lock gate, the scalar update, the
+      // One interactive transaction: the lock gate, the scalar update, the
       // choice diff and the audit row all commit — or none do. Interactive transactions are
       // avoided elsewhere in this codebase (plan §9, the viewer hot path against Turso), but this
       // is a rare admin write where SQLite's write-lock serializing it against a concurrent
-      // session INSERT is an acceptable, explicitly reviewed trade-off.
+      // session INSERT is an acceptable trade-off.
       return prisma.$transaction(async (tx) => {
         if (requireUnlocked) {
           // `data: {}` (a genuinely empty SET clause) silently matches 0 rows regardless of
@@ -106,7 +106,7 @@ export function createQuizRepository(): QuizRepository {
     },
 
     async delete(id, audit) {
-      // Interactive transaction (review round 3) so the delete and its audit row are atomic —
+      // Interactive transaction so the delete and its audit row are atomic —
       // see the comment on `update` above for why this is an accepted exception to plan §9.
       return prisma.$transaction(async (tx) => {
         const result = await tx.quizQuestion.deleteMany({ where: { id, video: { sessions: { none: {} } } } });

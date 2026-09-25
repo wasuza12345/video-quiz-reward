@@ -43,7 +43,7 @@ function toSessionRow(s: SessionWithRelations): SessionRowData {
   };
 }
 
-/** Admin lists/details are always paged or capped (review round 2 MINOR 7) — a user's lifetime
+/** Admin lists/details are always paged or capped — a user's lifetime
  * ledger/session history is unbounded, and loading all of it just to sum/count/max it in JS
  * doesn't scale the way a DB-side aggregate does. */
 const USER_DETAIL_ROW_CAP = 100;
@@ -62,7 +62,7 @@ export function createAnalyticsRepository(): AnalyticsRepository {
       ]);
       const userIds = users.map((u) => u.id);
       // Two grouped aggregates over just this page's users, instead of loading every session/
-      // ledger row for them and reducing in JS (review round 2 MINOR 7).
+      // ledger row for them and reducing in JS.
       const [pointsSums, lastActive] = await Promise.all([
         prisma.pointsLedger.groupBy({ by: ["userId"], where: { userId: { in: userIds } }, _sum: { points: true } }),
         prisma.watchSession.groupBy({ by: ["userId"], where: { userId: { in: userIds } }, _max: { startedAt: true } }),

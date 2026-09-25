@@ -27,34 +27,34 @@ export interface ThrottleStatus {
 }
 
 /** Best-effort hygiene, not a correctness requirement — run opportunistically, never awaited by a
- * caller that needs its result (review MINOR 3). Every window here is well under 24h, so a row
+ * caller that needs its result. Every window here is well under 24h, so a row
  * this old is always stale garbage, not a live counter. */
 export async function pruneStaleThrottleRows(): Promise<void> {
   await prisma.loginThrottle.deleteMany({ where: { updatedAt: { lt: new Date(Date.now() - STALE_ROW_MS) } } });
 }
 
 /**
- * Reserves this attempt against both counters BEFORE the caller checks the password (review
- * MINOR 1) — the old design checked-then-recorded as two separate steps, which let concurrent
- * requests all pass the check before any of them recorded a failure. Each key's own increment is
+ * Reserves this attempt against both counters BEFORE the caller checks the password — checking
+ * then recording as two separate steps would let concurrent requests all pass the check before any
+ * of them recorded a failure. Each key's own increment is
  * an atomic SQL `failCount = failCount + 1` (conditional for the ip+email key — see below); a
  * follow-up write only happens when that key's own threshold/window just tripped, which is safe
  * to lose a race on (worst case: one extra allowed attempt, not an unbounded bypass).
  *
  * `skipEmailCap`: a request carrying a valid `vq_admin_dev` "known device" cookie for the admin
- * being logged into skips the email-wide 50/hour cap (review MAJOR) — otherwise anyone who learns
+ * being logged into skips the email-wide 50/hour cap — otherwise anyone who learns
  * the admin's email can lock the real admin out by failing 50 times from other IPs. The
  * per-(email, ip) lock still applies regardless, so this never disables throttling entirely.
  */
 export async function reserveLoginAttempt(email: string, ip: string, opts: { skipEmailCap: boolean }): Promise<ThrottleStatus> {
-  void pruneStaleThrottleRows().catch(() => {}); // best-effort, never blocks the login path (review MINOR C)
+  void pruneStaleThrottleRows().catch(() => {}); // best-effort, never blocks the login path
   const now = new Date();
 
   const ipKey = ipThrottleKey(email, ip);
   // Ensure the row exists without touching failCount (a plain upsert would otherwise increment it
   // unconditionally — see the conditional updateMany right below for why that matters).
   await prisma.loginThrottle.upsert({ where: { key: ipKey }, create: { key: ipKey, failCount: 0, windowStart: now }, update: {} });
-  // Only increment while NOT currently locked (review round 2, MINOR B) — incrementing on every
+  // Only increment while NOT currently locked — incrementing on every
   // retry *during* an active lock left failCount elevated well past the limit, so the very next
   // attempt after the 15 min lock expired immediately re-tripped it instead of getting a fresh
   // set of attempts.

@@ -23,12 +23,12 @@ export function createAdminAuthService(deps: { adminAuthRepo: AdminAuthRepositor
       const email = emailInput.toLowerCase();
       const admin = await deps.adminAuthRepo.findByEmail(email);
 
-      // A recognized device for THIS admin skips the email-wide cap (review MAJOR) — otherwise
+      // A recognized device for THIS admin skips the email-wide cap — otherwise
       // anyone who learns the admin's email can lock the real admin out from anywhere. The
       // per-(email, ip) lock below still applies regardless, so this never disables throttling.
       const skipEmailCap = !!admin && verifyAdminDeviceCookieValue(deviceCookieValue, admin.id);
 
-      // Reserved BEFORE the password check (review MINOR 1) — a blocked attempt never touches
+      // Reserved BEFORE the password check — a blocked attempt never touches
       // bcrypt, and the reservation itself is what gets recorded as this attempt's failure if the
       // credentials turn out to be wrong (no separate "record failure" step after the fact).
       const reservation = await reserveLoginAttempt(email, ip, { skipEmailCap });

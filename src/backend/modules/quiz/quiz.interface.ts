@@ -59,8 +59,8 @@ export interface QuizRepository {
   create(input: CreateQuestionInput, audit: AuditContext): Promise<AdminQuestionRow>;
   /** `requireUnlocked`: true when this update touches a locked-sensitive field (triggerSec,
    * correctChoice, or an add/remove of a choice label) — gated on a conditional write so a
-   * session created between the service's lock check and this write can't slip through (review
-   * round 2 MINOR 3). `null` means the gate failed (now locked). */
+   * session created between the service's lock check and this write can't slip through.
+   * `null` means the gate failed (now locked). */
   update(id: string, input: UpdateQuestionInput, audit: AuditContext, requireUnlocked: boolean): Promise<AdminQuestionRow | null>;
   /** Always gated the same way — delete has no "always allowed" subset of fields. `false` means the gate failed (now locked). */
   delete(id: string, audit: AuditContext): Promise<boolean>;

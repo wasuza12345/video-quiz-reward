@@ -30,7 +30,7 @@ export function createAdminAuthController(deps: { adminAuthService: AdminAuthSer
         await issueAdminCookieValue({ adminId: session.adminId, tokenVersion: session.tokenVersion }),
         { ...ADMIN_COOKIE_OPTS, maxAge: ADMIN_SESSION_MAX_AGE_SECONDS },
       );
-      // Refreshed on every successful login (review MAJOR) — this is what lets the real admin's
+      // Refreshed on every successful login — this is what lets the real admin's
       // browser skip the email-wide throttle cap while a stranger's browser still can't.
       response.cookies.set(ADMIN_DEVICE_COOKIE_NAME, issueAdminDeviceCookieValue(session.adminId), {
         ...ADMIN_COOKIE_OPTS,
@@ -54,7 +54,7 @@ export function createAdminAuthController(deps: { adminAuthService: AdminAuthSer
           response = errorResponse(new AppError("UNAUTHENTICATED", "logout failed"));
         }
       }
-      // Cleared on every response from this endpoint, success or failure (review MINOR 4) — a
+      // Cleared on every response from this endpoint, success or failure — a
       // client calling /logout wants the session gone locally regardless of why the server call
       // failed (e.g. an already-expired session shouldn't leave a stale cookie behind either).
       response.cookies.delete({ name: ADMIN_COOKIE_NAME, path: "/" });

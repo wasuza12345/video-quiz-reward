@@ -60,8 +60,8 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 }
 
-/** 0 < triggerSec < durationSec - 2 (plan §7) — re-checked whenever durationSec itself changes
- * (review round 2 MAJOR), since a question valid under the old duration can silently become
+/** 0 < triggerSec < durationSec - 2 (plan §7) — re-checked whenever durationSec itself changes,
+ * since a question valid under the old duration can silently become
  * unreachable under a shorter one. */
 function assertQuestionsFitDuration(questions: AdminQuestionRow[], durationSec: number): void {
   for (const q of questions) {
@@ -71,7 +71,7 @@ function assertQuestionsFitDuration(questions: AdminQuestionRow[], durationSec: 
   }
 }
 
-/** Full re-validation before publish (review round 2 MAJOR) — a video must never go live with a
+/** Full re-validation before publish — a video must never go live with a
  * question nobody can ever reach or correctly answer, which would make canEnd impossible (plan
  * §6: the quiz gate blocks progress) or the reward unattainable. */
 function assertQuestionsPublishable(questions: AdminQuestionRow[], durationSec: number): void {
@@ -172,8 +172,8 @@ export function createVideoService(deps: { videoRepo: VideoRepository; rewardRep
         });
       }
 
-      // A shorter duration can strand an existing question past the new gate window (review
-      // round 2 MAJOR) — this can only happen when unlocked (locked already rejected durationSec above).
+      // A shorter duration can strand an existing question past the new gate window —
+      // this can only happen when unlocked (locked already rejected durationSec above).
       if (input.durationSec !== undefined) assertQuestionsFitDuration(current.questions, input.durationSec);
 
       let youtubeId: string | undefined;
@@ -214,7 +214,7 @@ export function createVideoService(deps: { videoRepo: VideoRepository; rewardRep
     async adminPublish(id, admin) {
       const video = await requireAdminRow(id);
       // Idempotent: re-clicking "publish" on an already-published video just returns it as-is,
-      // rather than erroring or re-validating (review round 2 MINOR 4 — documented choice).
+      // rather than erroring or re-validating (a documented choice).
       if (video.status === "published") return toAdminListItem(video);
 
       assertQuestionsPublishable(video.questions, video.durationSec);

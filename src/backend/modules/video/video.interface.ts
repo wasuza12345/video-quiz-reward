@@ -63,8 +63,8 @@ export interface VideoRepository {
   /**
    * `requireUnlocked`: when true (the update touches youtubeUrl/durationSec — plan §7's locked
    * set), the write is gated on a conditional `updateMany({ sessions: { none: {} } })` so a
-   * session created between the service's lock check and this write can't slip through (review
-   * round 2 MINOR 3) — `null` means the gate failed (now locked).
+   * session created between the service's lock check and this write can't slip through —
+   * `null` means the gate failed (now locked).
    */
   update(id: string, input: UpdateVideoInput, audit: AuditContext, requireUnlocked: boolean): Promise<AdminVideoRow | null>;
   setStatus(id: string, status: VideoStatus, action: "video.publish" | "video.archive", audit: AuditContext): Promise<AdminVideoRow>;

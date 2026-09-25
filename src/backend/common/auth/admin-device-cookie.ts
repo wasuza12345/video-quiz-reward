@@ -1,4 +1,4 @@
-// "Known device" cookie (review MAJOR on P5a): recognizes a browser that has logged in
+// "Known device" cookie: recognizes a browser that has logged in
 // successfully as a given admin before, so the email-wide login-throttle cap (login-throttle.ts)
 // can be skipped for it. Without this, anyone who learns the admin's email can lock the real
 // admin out by failing 50 logins/hour from rotating IPs — the device cookie is what lets the real
@@ -14,7 +14,7 @@ export const ADMIN_DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 90; // 90 days
 
 // "dev|" domain-separates this signature from any other scheme that might ever sign a raw string
 // with the same ADMIN_SESSION_SECRET, so a value valid under one scheme can't be replayed as
-// valid under this one (review round 2, MINOR D).
+// valid under this one.
 function sign(value: string, secret: string): string {
   return createHmac("sha256", secret).update(`dev|${value}`).digest("base64url");
 }
