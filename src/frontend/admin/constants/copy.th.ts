@@ -7,6 +7,7 @@ export const shell = {
   logout: "ออกจากระบบ",
   hamburgerAriaLabel: "เปิดเมนู",
   closeDrawerAriaLabel: "ปิดเมนู",
+  meError: { title: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้", body: "ลองใหม่อีกครั้งนะคะ", retry: "ลองใหม่" },
 };
 
 export const login = {

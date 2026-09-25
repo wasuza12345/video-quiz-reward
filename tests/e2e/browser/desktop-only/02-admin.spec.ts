@@ -25,6 +25,29 @@ test("admin login: wrong password shows an error, correct password reaches the d
   await expect(page.getByText("แดชบอร์ด").first()).toBeVisible();
 });
 
+// tester audit MINOR 3: AdminShell's own /api/admin/auth/me check used to treat EVERY failure
+// (network error, timeout, 5xx) exactly like an expired session and redirect to login — a
+// still-valid admin got kicked out just because the connection blipped.
+test("AdminShell: a network failure on /api/admin/auth/me shows a retry state and stays on the page; a real 401 still redirects to login", async ({ page }) => {
+  await adminLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+
+  await page.route("**/api/admin/auth/me", (route) => route.abort("failed"));
+  await page.reload();
+  await expect(page.getByText("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้"), "a network failure must show the retry error state").toBeVisible({ timeout: 10_000 });
+  expect(page.url(), "must never have redirected to login over a network error").not.toContain("/admin/login");
+
+  await page.unroute("**/api/admin/auth/me");
+  await page.getByRole("button", { name: "ลองใหม่" }).click();
+  await expect(page.getByText("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้"), "retry must recover once the connection is back").not.toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("แดชบอร์ด").first()).toBeVisible();
+
+  await page.route("**/api/admin/auth/me", (route) =>
+    route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "not logged in" } }) }),
+  );
+  await page.reload();
+  await page.waitForURL(/\/admin\/login\?reason=expired/, { timeout: 10_000 });
+});
+
 test("create video → publish → feature → shows on / → session timeline → locked fields → logout", async ({ page }) => {
   // Planner review: AdminSessionDetailPage's Fact component used to wrap `sub` in a <p>, and the
   // playedWallSec Fact passes a <ProgressBar> (renders a <div>) as sub — a <div> nested in a <p>

@@ -5,9 +5,10 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/frontend/shared/ui/Button";
+import { ErrorState } from "@/frontend/shared/ui/ErrorState";
 import { IconButton } from "@/frontend/shared/ui/IconButton";
 import { shell } from "../constants/copy.th";
-import { adminApi } from "../services/api";
+import { AdminApiError, adminApi } from "../services/api";
 
 const NAV_ITEMS = [
   { href: "/admin", label: shell.nav.dashboard, match: (p: string) => p === "/admin" },
@@ -61,13 +62,34 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [meError, setMeError] = useState(false);
+  const [meRetryKey, setMeRetryKey] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     adminApi
       .me()
-      .then((me) => setEmail(me.email))
-      .catch(() => router.push("/admin/login?reason=expired"));
-  }, [router]);
+      .then((me) => {
+        if (cancelled) return;
+        setEmail(me.email);
+        setMeError(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // Tester audit MINOR 3: a network error, timeout or 5xx used to be treated exactly like
+        // an expired session (401 UNAUTHENTICATED) and kicked a still-valid admin to the login
+        // page. Only a real UNAUTHENTICATED redirects; anything else shows an in-shell retry
+        // instead, keeping the admin on the page.
+        if (err instanceof AdminApiError && err.code === "UNAUTHENTICATED") {
+          router.push("/admin/login?reason=expired");
+        } else {
+          setMeError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router, meRetryKey]);
 
   const handleLogout = () => {
     void adminApi.logout().finally(() => router.push("/admin/login?reason=logout"));
@@ -144,7 +166,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <main style={{ flex: 1, background: "var(--bg-admin)", padding: "var(--gutter)" }}>{children}</main>
+        <main style={{ flex: 1, background: "var(--bg-admin)", padding: "var(--gutter)" }}>
+          {meError ? (
+            <ErrorState title={shell.meError.title} body={shell.meError.body} action={{ label: shell.meError.retry, onClick: () => setMeRetryKey((k) => k + 1) }} />
+          ) : (
+            children
+          )}
+        </main>
       </div>
     </div>
   );
