@@ -229,6 +229,47 @@ describe("YouTubePlayerAdapter — seekTo / ENDED unstick", () => {
   });
 });
 
+describe("YouTubePlayerAdapter — snapTo (pure corrective seek)", () => {
+  it("seeks the raw player without ever calling playVideo(), regardless of player state", () => {
+    const player = new FakePlayer();
+    const cb = callbacks();
+    const adapter = new YouTubePlayerAdapter(player, cb);
+    player.setState(YT_PLAYER_STATE.PAUSED, 40);
+
+    adapter.snapTo(0);
+
+    expect(player.seekToCalls).toEqual([0]);
+    expect(player.playVideoCallCount, "snapTo must never call playVideo() — it's a pure corrective seek").toBe(0);
+  });
+
+  it("does not touch the autoplay guard: an already-armed guard is left armed", () => {
+    const player = new FakePlayer();
+    const cb = callbacks();
+    const adapter = new YouTubePlayerAdapter(player, cb);
+
+    adapter.seekTo(10, { resume: false }); // arms the guard
+    adapter.snapTo(5);
+
+    player.setState(YT_PLAYER_STATE.PLAYING, 5);
+    adapter.handleStateChange(YT_PLAYER_STATE.PLAYING);
+    expect(player.pauseVideoCallCount, "snapTo must not have disarmed a pre-existing guard").toBe(1);
+    expect(cb.onPlay).not.toHaveBeenCalled();
+  });
+
+  it("does not arm the guard either: a later genuine PLAYING is reported normally", () => {
+    const player = new FakePlayer();
+    const cb = callbacks();
+    const adapter = new YouTubePlayerAdapter(player, cb);
+
+    adapter.snapTo(5);
+    player.setState(YT_PLAYER_STATE.PLAYING, 5);
+    adapter.handleStateChange(YT_PLAYER_STATE.PLAYING);
+
+    expect(player.pauseVideoCallCount, "snapTo must not itself arm a guard").toBe(0);
+    expect(cb.onPlay).toHaveBeenCalledWith(5);
+  });
+});
+
 describe("YouTubePlayerAdapter — settled events, playback rate, lifecycle", () => {
   it("onPause fires with the settled position for a real PAUSED", () => {
     const player = new FakePlayer();

@@ -58,6 +58,16 @@ export class YouTubePlayerAdapter {
     return this.player.getCurrentTime();
   }
 
+  /** A pure corrective seek — no guard change, no play. For a caller (the anti-cheat rAF seek
+   * guard's own snap-back) that only ever runs while genuinely playing and must never risk
+   * re-starting playback: seekTo(sec, {resume:true}) would call playVideo() if the player wasn't
+   * already reporting PLAYING right after the seek — a real narrow race if the user's own Pause
+   * click landed a moment earlier and its PAUSED confirmation hasn't arrived yet. snapTo() can't
+   * undo that pause. */
+  snapTo(sec: number): void {
+    this.player.seekTo(sec, true);
+  }
+
   /** Drops any armed guard without touching the player itself — for a caller resetting its own
    * session bookkeeping (e.g. an in-app replay reusing this same instance) where a guard armed
    * for the just-ended session must not carry over and swallow the new session's first play. */

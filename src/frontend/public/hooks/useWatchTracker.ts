@@ -30,14 +30,14 @@ export interface UseWatchTrackerOptions {
  * `player.currentTime()`.
  */
 export interface WatchTrackerApi {
-  /** True while a gate-hit PAUSE write is in flight — WatchPage's onStateChange(PAUSED) handler
+  /** True while a gate-hit PAUSE write is in flight — WatchPage's onPause handler
    * uses this to skip the duplicate PAUSE the tracker's own player.pause() call triggers. */
   isGateInFlight: () => boolean;
   /** The tracker's local high-water mark (display only — server furthestSec stays authoritative
    * for anti-cheat; see usePlayerProgress). */
   getMaxReached: () => number;
   /** Call with the player's actual position on a real, settled PAUSED or genuine (non-swallowed)
-   * PLAYING state — see WatchTracker.noteSettled. WatchPage's onStateChange handler wires both. */
+   * PLAYING state — see WatchTracker.noteSettled. WatchPage's onPlay and onPause handlers wire both. */
   noteSettled: (currentTime: number) => void;
 }
 
@@ -89,7 +89,12 @@ export function useWatchTracker({
       if (!gateInFlight.current) {
         const decision = tracker.onFrame(currentTime, frameDtSec, quizzes, passedQuestionIds);
         if (decision.kind === "seek_guard") {
-          player.seekTo(decision.seekTo, { resume: true });
+          // A pure corrective seek, never a play — this loop only runs while `active` (status
+          // "playing"), but seekTo(x, {resume:true}) would still call playVideo() if the player
+          // wasn't already reporting PLAYING right after the seek, which could re-start playback
+          // the user just paused (their PAUSED confirmation hadn't landed here yet). snapTo()
+          // can't do that.
+          player.snapTo(decision.seekTo);
           dispatch({ type: "CLIENT_SEEK_GUARD", furthestSec: decision.seekTo });
         } else if (decision.kind === "gate") {
           gateInFlight.current = true;

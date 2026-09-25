@@ -170,7 +170,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // (keyed on sessionId only) so this doesn't also fire — harmlessly, but needlessly — whenever
   // `player` itself changes identity (becomes ready, or a youtubeId/title change remounts it). An
   // in-app replay reuses the same player instance, still possibly guard-armed from the just-ended
-  // previous session's own pendingSeekTo-to-0 seek; that guard must not carry over. ---
+  // previous session's own pendingSeekTo-to-0 seek; that guard must not carry over.
+  //
+  // ORDERING: must be declared (and therefore run) BEFORE the pendingSeekTo effect further down.
+  // A fresh SESSION_LOADED always sets a new pendingSeekTo too, so both effects fire in the same
+  // commit — pendingSeekTo's own player.seekTo() call is the authoritative last word on the
+  // guard's armed/cleared state for the new session's seek. If this effect ran after it instead,
+  // it would silently clear a guard that seekTo() just correctly armed. See
+  // watch-page-reset-guard-ordering.test.tsx, which pins this via call order on the adapter. ---
   useEffect(() => {
     player?.resetGuard();
   }, [state.sessionId, player]);
@@ -297,7 +304,11 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   // --- apply a reducer-requested seek, then resume playback if we're meant to be playing —
   // otherwise stay paused. The adapter owns the ENDED-unstick quirk (seekTo() alone is a no-op
-  // once ENDED) and the autoplay-after-seek guard for the "stay paused" case. ---
+  // once ENDED) and the autoplay-after-seek guard for the "stay paused" case.
+  //
+  // ORDERING: this seekTo() call must run AFTER the resetGuard() effect above (they always fire
+  // in the same commit on a fresh SESSION_LOADED) — this call is the last word on the guard's
+  // state for the new seek, so it must not be undone by a stale-guard reset that runs later. ---
   useEffect(() => {
     if (state.pendingSeekTo === null || !player) return;
     player.seekTo(state.pendingSeekTo, { resume: state.status === "playing" });
