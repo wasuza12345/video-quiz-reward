@@ -81,7 +81,7 @@ export interface EventsApplyResponse {
   currentQuestionId: string | null;
   results: EventResult[];
   /** How much more server-measured PLAYING time canEnd's own check still needs (0 once
-   * satisfied) — not secret, canEnd itself is public (planner review round 5, MAJOR). Lets the
+   * satisfied) — not secret, canEnd itself is public. Lets the
    * client compute a real ENDED_NOT_WATCHED recovery seek instead of guessing from its own
    * (less reliable, credit-capped) local estimate. */
   remainingWatchSec: number;

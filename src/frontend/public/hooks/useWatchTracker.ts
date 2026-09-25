@@ -31,8 +31,7 @@ export interface UseWatchTrackerOptions {
  */
 export interface WatchTrackerApi {
   /** True while a gate-hit PAUSE write is in flight — WatchPage's onStateChange(PAUSED) handler
-   * uses this to skip the duplicate PAUSE the tracker's own player.pauseVideo() call triggers
-   * (review MINOR 4). */
+   * uses this to skip the duplicate PAUSE the tracker's own player.pauseVideo() call triggers. */
   isGateInFlight: () => boolean;
   /** The tracker's local high-water mark (display only — server furthestSec stays authoritative
    * for anti-cheat; see usePlayerProgress). */

@@ -30,8 +30,8 @@ export type RejectReason = (typeof REJECT_REASONS)[number];
 /** Rejections that count toward `softRejectCount` (a single one can be network loss).
  * NOT_WATCHED deliberately excluded: it can fire repeatedly for a single honest client-side bug
  * (the player never actually cheated — see WatchPage.tsx's own ENDED recovery cap), unlike
- * SPEED_EXCEEDED, which only ever fires once per genuine cheat attempt (planner review round 4,
- * BLOCKER #3 — an honest viewer got flagged after ~110 NOT_WATCHED rejects from one client bug). */
+ * SPEED_EXCEEDED, which only ever fires once per genuine cheat attempt — an honest viewer once
+ * got flagged after ~110 NOT_WATCHED rejects from one client bug. */
 export const SOFT_REJECT_REASONS: readonly RejectReason[] = ["SPEED_EXCEEDED"];
 
 export const TOLERANCES = {

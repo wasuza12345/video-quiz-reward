@@ -85,8 +85,7 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
   const containerRef = useRef<HTMLDivElement>(null);
   // Tracks the live instance across this effect invocation. Not a DOM query: the real YT IFrame
   // API *replaces* the target element with its <iframe> (it doesn't append one inside it), so
-  // `containerRef.current.querySelector("iframe")` can never match in a real browser — planner
-  // review round on the "refresh disables Play forever" fix.
+  // `containerRef.current.querySelector("iframe")` can never match in a real browser.
   const instanceRef = useRef<YTPlayer | null>(null);
   const [player, setPlayer] = useState<YTPlayer | null>(null);
   const [ready, setReady] = useState(false);
@@ -109,8 +108,8 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
       .then((YT) => {
         // Idempotency guard: never create a second player while one is already alive for this
         // effect invocation (defence in depth against any future refactor that decouples this
-        // effect's cleanup from its own re-run — review round, planner lead (b)). Tracked via a
-        // ref, not a DOM query — see the comment on instanceRef above.
+        // effect's cleanup from its own re-run). Tracked via a ref, not a DOM query — see the
+        // comment on instanceRef above.
         if (cancelled || !containerRef.current || instanceRef.current) return;
         instance = new YT.Player(containerRef.current, {
           videoId: youtubeId,

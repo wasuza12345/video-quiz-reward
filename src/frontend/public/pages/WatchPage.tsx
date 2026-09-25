@@ -53,22 +53,22 @@ export function WatchPage({ videoId }: WatchPageProps) {
   });
 
   const claimAttemptedRef = useRef<string | null>(null);
-  // ENDED_NOT_WATCHED recovery bookkeeping (planner review round 4 BLOCKER #2, round 5 MAJOR
-  // follow-up): a seek-back that didn't move the player far enough re-fires ENDED almost
-  // immediately — dev.db: ~110 ENDED sends ~80ms apart, softRejectCount 107. A re-ENDED within
-  // ENDED_RECOVERY_TIGHT_WINDOW_SEC of the last recovery seek is that same tight loop; one after
-  // genuine real playback is a fresh attempt and must not inherit an old, already-resolved tight
-  // streak. After MAX_TIGHT_ENDED_RECOVERY_ATTEMPTS tight re-ends in a row, the client must still
-  // never sit silently in "playing" at ENDED (round 5's MAJOR finding: a short server-measured
-  // playedWall with furthest already near the end can make every recovery attempt land right
-  // back at the end again, even with the corrected seek formula below) — see attemptEndedRecovery.
+  // ENDED_NOT_WATCHED recovery bookkeeping: a seek-back that didn't move the player far enough
+  // can re-fire ENDED almost immediately — ~110 ENDED sends ~80ms apart, softRejectCount 107, in
+  // one observed case. A re-ENDED within ENDED_RECOVERY_TIGHT_WINDOW_SEC of the last recovery seek
+  // is that same tight loop; one after genuine real playback is a fresh attempt and must not
+  // inherit an old, already-resolved tight streak. After MAX_TIGHT_ENDED_RECOVERY_ATTEMPTS tight
+  // re-ends in a row, the client must still never sit silently in "playing" at ENDED: a short
+  // server-measured playedWall with furthest already near the end can make every recovery attempt
+  // land right back at the end again, even with the corrected seek formula below — see
+  // attemptEndedRecovery.
   const endedRecoveryAttemptsRef = useRef(0);
   const lastEndedRecoverySeekAtRef = useRef<number | null>(null);
   const endedRecoveryRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ENDED_RECOVERY_TIGHT_WINDOW_SEC = 2;
   const MAX_TIGHT_ENDED_RECOVERY_ATTEMPTS = 3;
   // Guards the initial mount's /api/me + /api/sessions calls against StrictMode's dev-only
-  // double-invoke of effects (review MINOR 2) — keyed on videoId (not just a boolean) so a
+  // double-invoke of effects — keyed on videoId (not just a boolean) so a
   // genuine videoId change still loads. handleReplay/handleRetry call loadSession() directly
   // from a user gesture and are unaffected.
   const initialLoadVideoIdRef = useRef<string | null>(null);
@@ -112,13 +112,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   // True from the moment the auto-resume-after-correct-answer timer fires until the player
   // actually confirms PLAYING — the ControlBar toggle is disabled for this window so a click
-  // can't race the auto-resume's own seek/play and produce a spurious backward jump (MINOR 3).
+  // can't race the auto-resume's own seek/play and produce a spurious backward jump.
   const [autoResuming, setAutoResuming] = useState(false);
 
   // Armed by the resume-seek effect below whenever the resumed/reloaded session should stay
   // paused. YouTube's seekTo() on a freshly-cued player can silently resume playback on its own
   // — no playVideo() call of ours involved — which let a reloaded session run unattended straight
-  // through the quiz gate (found in P6b browser E2E: the Play button ends up permanently disabled
+  // through the quiz gate (the Play button ends up permanently disabled
   // because status jumps to "quiz_open" behind the user's back). A ref, not state: it's read only
   // from the imperative onStateChange/handleToggle callbacks, never rendered.
   //
@@ -127,8 +127,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // session), the guard must not outlive it — otherwise the NEXT legitimate playVideo() (the
   // quiz auto-resume, or a user's Play click) gets its own PLAYING event swallowed and re-paused,
   // and — since that swallow returns before setAutoResuming(false) — autoResuming gets stuck
-  // true, permanently disabling the Play/Pause control (the same symptom, a different trigger;
-  // found by planner review after the first fix). Disarmed by: consuming a spurious PLAYING, the
+  // true, permanently disabling the Play/Pause control (the same symptom, a different trigger).
+  // Disarmed by: consuming a spurious PLAYING, the
   // next settled (non-BUFFERING, non-UNSTARTED) state, a ~5s backstop timeout, or any programmatic
   // playVideo() we make on purpose (which always clears it first, since a real play should never
   // be swallowed).
@@ -137,8 +137,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // wins if it arrives first. It has to be generous: real instrumentation on the quirk showed an
   // asynchronous UNSTARTED -> BUFFERING -> UNSTARTED -> PLAYING sequence, and a slow buffer can
   // easily outlast a short timer, which would disarm the guard *before* the quirk's own PLAYING
-  // lands — letting it straight through as if it were a real, user-initiated play (planner review
-  // round: this exact race was observed with the original 1.5s timeout).
+  // lands — letting it straight through as if it were a real, user-initiated play (this exact
+  // race was observed with the original 1.5s timeout).
   const suppressAutoplayAfterSeekRef = useRef(false);
   const suppressAutoplayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const AUTOPLAY_GUARD_BACKSTOP_MS = 5000;
@@ -164,7 +164,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // must come back to false once the player actually confirms PLAYING. If playVideo() never
   // yields PLAYING — e.g. iOS/Safari silently blocking playback that lacks a user gesture — the
   // Play/Pause control would stay disabled forever with no way for the user to recover. This
-  // timeout clears it after a few seconds so a manual tap can take over (planner review round).
+  // timeout clears it after a few seconds so a manual tap can take over.
   const autoResumingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const AUTO_RESUMING_BACKSTOP_MS = 3000;
 
@@ -195,8 +195,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
   }, []);
 
   // --- resets that follow a fresh session — including an in-app replay of the same video, which
-  // reuses the existing player instance rather than remounting it (planner review: "replay
-  // restarts from 0"). autoResuming/the autoplay guard are otherwise only ever cleared by a
+  // reuses the existing player instance rather than remounting it. autoResuming/the autoplay
+  // guard are otherwise only ever cleared by a
   // player state change or their own backstop timers, none of which fire on a session swap by
   // itself — stale from the just-ended previous session, they'd wrongly keep the just-armed
   // pendingSeekTo-to-0 guard (or a stuck autoResuming) around into the new one. ---
@@ -223,7 +223,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // --- player state changes drive both the reducer and the server write (plan §6) ---
   useEffect(() => {
     // Handles every real ENDED transition, including a recovery's own re-ENDED. Never gives up
-    // silently (planner review round 5, MAJOR): a short server-measured playedWall (credit is
+    // silently: a short server-measured playedWall (credit is
     // capped at 10s/event — a mobile stall, a slow write, or background throttling can all make
     // it fall behind) combined with furthest already near the end could make the OLD, client-
     // estimate-only seek formula land right back at the end, over and over, forever (dev.db:
@@ -265,8 +265,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
           // reported remaining watch time (not hammering it every ~80ms) before trying once
           // more. A later real ENDED (tight or not) clears this via the guard at the top.
           //
-          // Floored at ENDED_RECOVERY_TIGHT_WINDOW_SEC + 3 (planner review round 5 follow-up
-          // MINOR (a)): when remainingWatchSec is 0 (e.g. the player genuinely can't move —
+          // Floored at ENDED_RECOVERY_TIGHT_WINDOW_SEC + 3: when remainingWatchSec is 0 (e.g. the
+          // player genuinely can't move —
           // furthestSec is what's actually short, not playedWall), the old (remaining + 1)s delay
           // was only 1s — inside the 2s tight window, so every backstop-triggered retry looked
           // like the SAME stuck streak, stayed capped, and rescheduled itself again at 1s: a
@@ -295,8 +295,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
           player.pauseVideo();
           return;
         }
-        // Hidden-tab edge (planner review round 5 follow-up MINOR (b)): if the tab was
-        // backgrounded after the quiz auto-resume's own player.playVideo() call but before this
+        // Hidden-tab edge: if the tab was backgrounded after the quiz auto-resume's own
+        // player.playVideo() call but before this
         // PLAYING confirmation arrived (both real, independently-async postMessage round trips —
         // nothing orders them), state.status was still "paused"/"quiz_open" the whole time, so
         // the separate visibilitychange handler's own status==="playing" guard never fired for
@@ -313,7 +313,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
         clearAutoResumingBackstop();
         // The PAUSED event's own position is itself stale on real YouTube — the ~0.27s pause-
         // settle creep only becomes visible here, at the next genuine PLAYING read. Bounded the
-        // same way as the PAUSED call below (planner review round 2: "lift guard mark on resume").
+        // same way as the PAUSED call below.
         trackerApi.noteSettled(currentTime);
         dispatch({ type: "PLAY_CLICKED" });
         void writer.sendImmediate("PLAY", currentTime);
@@ -332,7 +332,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
         setAutoResuming(false);
         clearAutoResumingBackstop();
         // The gate-hit flow (useWatchTracker) already calls player.pauseVideo() and sends its
-        // own PAUSE — skip the duplicate this onStateChange(PAUSED) would otherwise send (MINOR 4).
+        // own PAUSE — skip the duplicate this onStateChange(PAUSED) would otherwise send.
         if (trackerApi.isGateInFlight()) return;
         dispatch({ type: "PAUSE_CLICKED" });
         void writer.sendImmediate("PAUSE", currentTime);
@@ -347,7 +347,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // --- apply a reducer-requested seek, then resume playback if we're meant to be playing (and
   // aren't already — avoids a redundant playVideo() call while one is already in progress);
   // otherwise arm the guard above, since seekTo() alone can make the player start playing on its
-  // own (review MAJOR) ---
+  // own ---
   useEffect(() => {
     if (state.pendingSeekTo === null || !player) return;
     if (state.status === "playing") {
@@ -357,9 +357,9 @@ export function WatchPage({ videoId }: WatchPageProps) {
         player.playVideo();
       }
     } else {
-      // Confirmed against real Chrome (planner review round 4: "replay restarts from 0" / a
-      // fresh page load starting at the old end position — the same underlying YouTube quirk):
-      // seekTo() alone is a silent no-op once the player has reached ENDED — getCurrentTime()
+      // Confirmed against real Chrome: seekTo() alone is a silent no-op once the player has
+      // reached ENDED (whether the video just ended, or a fresh page load starts at the old end
+      // position, the same underlying YouTube quirk) — getCurrentTime()
       // never moves, even seconds later. playVideo(), called in the SAME synchronous pass right
       // after it, is what unsticks it. The ENDED check must happen BEFORE seekTo() — reading
       // getPlayerState() right AFTER it is itself unreliable (also confirmed against real
@@ -412,10 +412,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // --- offline/online ---
   useEffect(() => {
     const onOffline = () => dispatch({ type: "OFFLINE" });
-    const onOnline = () => {
-      dispatch({ type: "ONLINE" });
-      dismissSticky();
-    };
+    const onOnline = () => dismissSticky();
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
     return () => {
@@ -435,8 +432,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
       // one, PAUSE_CLICKED's own guard (only "status !== playing" — no staleness check) would
       // wrongly flip status back to "paused" with no real pause ever having been issued for that,
       // permanently stopping useWatchTracker's rAF/TICK loop while the real player kept playing
-      // (found in dev.db: 30s with zero TICKs after an honest answer — planner review round 4,
-      // BLOCKER #1). Nothing meaningful to pause here anyway while not "playing".
+      // (one observed case: 30s with zero TICKs after an honest answer). Nothing meaningful to
+      // pause here anyway while not "playing".
       if (document.visibilityState !== "hidden" || !player || state.status !== "playing") return;
       const currentTime = player.getCurrentTime();
       dispatch({ type: "TAB_HIDDEN" });
@@ -508,8 +505,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // node YT.Player replaced with its iframe. `player` (React state) is then left pointing at that
   // now-detached iframe, whose postMessage commands (seekTo/playVideo) silently go nowhere once
   // <VideoPlayer> remounts with a NEW container div — confirmed against real Chrome: this, not
-  // the seekTo-alone-on-ENDED quirk, was the actual reason the replay fix still failed in the
-  // human's browser (planner review round 4: "replay restarts from 0").
+  // the seekTo-alone-on-ENDED quirk, was the actual reason an early replay-restart fix still
+  // failed in a real browser.
   const isLoading = state.status === "loading" && !state.reloadingInPlace;
 
   return (

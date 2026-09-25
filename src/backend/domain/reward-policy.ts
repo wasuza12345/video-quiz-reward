@@ -20,7 +20,7 @@ export function canEnd(
 }
 
 /** How much more server-measured PLAYING time canEnd's own playedWallSec check still needs —
- * not secret, since canEnd itself is public (planner review round 5, MAJOR): lets the client
+ * not secret, since canEnd itself is public. Lets the client
  * compute a real recovery seek-back instead of guessing from its own (less reliable, credit-
  * capped) local estimate. */
 export function remainingWatchSec(s: Pick<SessionSnapshot, "playedWallSec">, video: Pick<VideoRules, "durationSec">): number {

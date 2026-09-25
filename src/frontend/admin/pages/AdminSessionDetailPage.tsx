@@ -21,7 +21,7 @@ const SOFT_REJECT_LIMIT = TOLERANCES.SOFT_REJECT_FLAG_AT;
 
 /** Mirrors softRejectCount's own definition (shared/constants/session.ts): NOT_WATCHED must
  * never count toward this, or the copy would blame an honest ENDED-recovery retry loop for a
- * flag it didn't cause (planner review, clean-code MAJOR). */
+ * flag it didn't cause. */
 export function buildFlagReason(events: AdminSessionEventRow[]): string {
   const seekForwardCount = events.filter((e) => !e.accepted && e.rejectReason === "SEEK_FORWARD").length;
   if (seekForwardCount > 0) {

@@ -32,7 +32,7 @@ export class SessionWriter {
   private currentPlayState: "PLAY" | "PAUSE" = "PAUSE";
 
   /** `initialLastSeq` resumes the counter past a session's already-confirmed seq (e.g. after a
-   * refresh) so the first write doesn't restart at 1 and collide with stored events (MAJOR 1). */
+   * refresh) so the first write doesn't restart at 1 and collide with stored events. */
   constructor(
     private readonly post: PostEventsFn,
     initialLastSeq = 0,
@@ -104,7 +104,7 @@ export class SessionWriter {
         const res = await this.post(batch, opts);
         if (res.ok) return { kind: "ok", result: res.result };
         this.recoverFromConflict(res.conflict);
-        // Flush the correction (if any) right away instead of waiting for the next interval (MAJOR 1).
+        // Flush the correction (if any) right away instead of waiting for the next interval.
         if (this.queue.length > 0) void this.flush();
         return { kind: "conflict", conflict: res.conflict };
       } catch {

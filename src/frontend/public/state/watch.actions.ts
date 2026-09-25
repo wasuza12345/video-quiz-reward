@@ -34,5 +34,4 @@ export type WatchAction =
   | { type: "REPLAY_REQUESTED" }
   | { type: "RETRY_REQUESTED" }
   | { type: "OFFLINE" }
-  | { type: "ONLINE" }
   | { type: "SEEK_CONSUMED" };

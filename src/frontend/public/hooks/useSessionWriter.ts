@@ -48,7 +48,7 @@ function makePost(sessionId: string): PostEventsFn {
 
 /**
  * Wraps SessionWriter for React: creates one per sessionId (starting its seq counter past the
- * session's already-confirmed lastSeq, e.g. after a refresh — MAJOR 1), dispatches EVENTS_SYNCED
+ * session's already-confirmed lastSeq, e.g. after a refresh), dispatches EVENTS_SYNCED
  * on every accepted response and SEQ_CONFLICT on every 409, both centrally.
  */
 export function useSessionWriter(sessionId: string | null, initialLastSeq: number, dispatch: React.Dispatch<WatchAction>): SessionWriterApi {

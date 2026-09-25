@@ -157,15 +157,14 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
         inlineNotice: null,
         error: null,
         // Always seek, even to 0 — WatchPage's pendingSeekTo effect guards on `player` being
-        // non-null, so it naturally waits and fires once (review MAJOR). Skipping the seek when
+        // non-null, so it naturally waits and fires once. Skipping the seek when
         // positionSec was 0 used to assume a fresh player always already sits at 0 on its own,
         // which is true after a real page reload (a brand-new iframe cues to 0) but false for an
         // in-app replay of the SAME video with no reload: useYouTubePlayer's effect depends only
         // on [youtubeId, title], so it never reruns and the SAME player instance is reused —
         // still sitting at ENDED, at the old video's duration. Without an explicit seekTo(0), the
         // display read the stale position (e.g. showing 0:44/0:44, bar full) and Play did
-        // nothing: YouTube doesn't resume playback from an ENDED player without a seek first
-        // (planner review: "replay restarts from 0").
+        // nothing: YouTube doesn't resume playback from an ENDED player without a seek first.
         pendingSeekTo: s.positionSec,
       };
     }
@@ -325,8 +324,6 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
     case "OFFLINE":
       return { ...state, toastRequest: requestToast("offline", copy.toast.offline) };
 
-    // ONLINE carries no reducer-owned state — WatchPage dispatches it purely to trigger its own
-    // dismissSticky() side effect.
     default:
       return state;
   }
