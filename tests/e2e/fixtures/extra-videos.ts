@@ -1,5 +1,5 @@
-// Extra short-lived published videos for the anti-cheat / replay E2E specs (plan §10 early P6
-// slice) — no quiz questions, so canEnd only needs furthestSec/playedWallSec. Idempotent upserts,
+// Extra short-lived published videos for the anti-cheat / replay E2E specs (plan §10) — no quiz
+// questions, so canEnd only needs furthestSec/playedWallSec. Idempotent upserts,
 // run once per e2e server boot (scripts/e2e-server.sh) after the real prisma/seed.ts.
 import { prisma } from "../../../src/backend/lib/prisma";
 import { CHEATS_VIDEO_DURATION_SEC, CHEATS_VIDEO_YOUTUBE_ID, REPLAY_VIDEO_DURATION_SEC, REPLAY_VIDEO_YOUTUBE_ID } from "../helpers/env";

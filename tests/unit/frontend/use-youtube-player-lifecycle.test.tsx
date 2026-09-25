@@ -1,17 +1,15 @@
 // @vitest-environment jsdom
 //
-// Exercises useYouTubePlayer's player lifecycle against a real DOM (jsdom) with a fake YT.Player —
-// the reviewer's planner lead (b) on the "refresh disables Play forever" bug: "Make the hook
-// idempotent: one YT.Player per container. Destroy it in cleanup and null the ref." This is the
+// Exercises useYouTubePlayer's player lifecycle against a real DOM (jsdom) with a fake YT.Player.
+// The hook must be idempotent: one YT.Player per container, destroyed in cleanup with the ref
+// nulled — otherwise a refresh can leave Play permanently disabled. This is the
 // one file in the suite that needs a DOM at all, so it opts into jsdom per-file rather than
 // switching the whole project's default environment (vitest.config.mts stays "node").
 //
 // FakePlayer replaces its target element with the <iframe>, matching the real YT IFrame API (it
-// does not append the iframe inside the element it's given). A later planner review caught that
-// the hook's own idempotency guard had been written against the wrong shape — a
-// `container.querySelector("iframe")` check that can never match in a real browser — and this
-// harness originally matched that same wrong assumption. The hook now tracks the live instance in
-// a ref instead; this fake keeps the DOM shape honest so a similar guard can't regress silently.
+// does not append the iframe inside the element it's given) — a real browser never lets
+// `container.querySelector("iframe")` match, so the hook tracks the live instance in a ref
+// instead; this fake keeps the DOM shape honest so a similar guard can't regress silently.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

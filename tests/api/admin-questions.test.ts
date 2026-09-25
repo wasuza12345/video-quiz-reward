@@ -190,7 +190,7 @@ describe("admin quiz question CRUD (plan §4.4/§4.5/§7)", () => {
     expect(res.status).toBe(409);
   });
 
-  it("review round 3: a locked PATCH mixing a blocked field with an always-allowed one applies neither — no partial changes", async () => {
+  it("a locked PATCH mixing a blocked field with an always-allowed one applies neither — no partial changes", async () => {
     const { cookie, video } = await createUnlockedVideo(60);
     const q = await (
       await createQuestion(
@@ -310,7 +310,7 @@ describe("admin quiz question CRUD (plan §4.4/§4.5/§7)", () => {
   });
 });
 
-describe("review round 2 MINOR 2: duplicate choice labels are rejected by the schema, not the DB", () => {
+describe("duplicate choice labels are rejected by the schema, not the DB", () => {
   afterAll(() => prisma.$disconnect());
 
   it("create with two choices sharing a label → 400 VALIDATION_ERROR, not 409 DUPLICATE_TRIGGER", async () => {
@@ -343,7 +343,7 @@ describe("review round 2 MINOR 2: duplicate choice labels are rejected by the sc
   });
 });
 
-describe("review round 2 MINOR 1: AdminAuditLog for question mutations", () => {
+describe("AdminAuditLog for question mutations", () => {
   afterAll(() => prisma.$disconnect());
 
   it("create/update/delete each write exactly one audit row", async () => {

@@ -151,7 +151,7 @@ describe("§5 transition table", () => {
     expect(s).toMatchObject({ state: "ENDED", endedAt: at(0), lastPlayingAt: null });
   });
 
-  it.each<SessionState>(["PLAYING", "PAUSED"])("%s + ENDED when not canEnd → rejected NOT_WATCHED, but never counts as a soft reject (planner review round 4, BLOCKER #3)", (state) => {
+  it.each<SessionState>(["PLAYING", "PAUSED"])("%s + ENDED when not canEnd → rejected NOT_WATCHED, but never counts as a soft reject", (state) => {
     // NOT_WATCHED deliberately excluded from SOFT_REJECT_REASONS: an honest client-side seek-
     // back/recovery bug can re-fire it many times for one real session (dev.db: ~110 in a row),
     // unlike SPEED_EXCEEDED, which only fires once per genuine cheat attempt. Flagging on it

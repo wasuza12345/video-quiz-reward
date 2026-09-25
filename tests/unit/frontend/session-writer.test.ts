@@ -36,7 +36,7 @@ describe("SessionWriter — seq allocation and immediate flush", () => {
     expect(calls[0].map((e) => e.type)).toEqual(["TICK", "TICK", "PAUSE"]);
   });
 
-  it("resumes past a session's already-confirmed lastSeq instead of restarting at 1 (review MAJOR 1)", async () => {
+  it("resumes past a session's already-confirmed lastSeq instead of restarting at 1", async () => {
     const calls: QueuedEvent[][] = [];
     const post: PostEventsFn = async (events) => {
       calls.push(events);
@@ -126,7 +126,7 @@ describe("SessionWriter — 409 recovery never loops (plan §4.2)", () => {
     expect(second).toBeNull();
   });
 
-  it("resends exactly one correcting PLAY when our intent disagrees with the server's PAUSED, flushed immediately rather than left for the next interval (review MAJOR 1)", async () => {
+  it("resends exactly one correcting PLAY when our intent disagrees with the server's PAUSED, flushed immediately rather than left for the next interval", async () => {
     const calls: QueuedEvent[][] = [];
     let call = 0;
     const post: PostEventsFn = async (events) => {
@@ -143,7 +143,7 @@ describe("SessionWriter — 409 recovery never loops (plan §4.2)", () => {
 
     expect(calls[0].map((e) => e.seq)).toEqual([1, 2, 3]);
     // The correction was queued AND already sent by the time sendImmediate resolves — no waiting
-    // for the next 5s interval (that was the old behavior; MAJOR 1 fixes it).
+    // for the next 5s interval.
     expect(call).toBe(2);
     expect(calls[1]).toHaveLength(1);
     expect(calls[1][0]).toMatchObject({ seq: 6, type: "PLAY", positionSec: 9 }); // fresh seq past lastSeq 5, not 1/2/3

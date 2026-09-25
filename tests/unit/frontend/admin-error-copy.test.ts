@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { publishOrFeatureErrorMessage } from "@/frontend/admin/pages/AdminVideoFormPage";
 import { mapQuestionSaveError } from "@/frontend/admin/components/QuizEditor";
 
-describe("publishOrFeatureErrorMessage (review round 3 MINOR 4: no raw English toasts)", () => {
+describe("publishOrFeatureErrorMessage (no raw English toasts)", () => {
   it("names the offending question's trigger time for INVALID_TRIGGER", () => {
     expect(publishOrFeatureErrorMessage({ code: "INVALID_TRIGGER", extra: { triggerSec: 30 } })).toBe(
       "คำถามที่เวลา 0:30.0 ไม่พอดีกับความยาวคลิปที่แก้ไขแล้ว กรุณาแก้ไขก่อนเผยแพร่ค่ะ",
@@ -32,7 +32,7 @@ describe("publishOrFeatureErrorMessage (review round 3 MINOR 4: no raw English t
   });
 });
 
-describe("mapQuestionSaveError (review round 3 MINOR 3: use err.extra.issues[0], not a blind default)", () => {
+describe("mapQuestionSaveError (uses err.extra.issues[0], not a blind default)", () => {
   it("DUPLICATE_TRIGGER attaches to the triggerSec field", () => {
     expect(mapQuestionSaveError({ code: "DUPLICATE_TRIGGER", extra: {} }, 44)).toEqual({ field: "triggerSec", message: "มีคำถามที่เวลานี้แล้ว เลือกเวลาอื่นค่ะ" });
   });

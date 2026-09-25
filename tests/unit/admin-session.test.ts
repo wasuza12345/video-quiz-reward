@@ -1,5 +1,5 @@
 // Pure JWT sign/verify — no DB, no Prisma. Proves the algorithm allowlist actually rejects what
-// it's supposed to (review MINOR 6): an HS512-signed token (right secret, wrong alg), and the
+// it's supposed to: an HS512-signed token (right secret, wrong alg), and the
 // classic `alg: none` unsigned-token forgery, both must fail even though `jose` never even lets
 // `alg: none` sign successfully — the assertion is on verification, the real attack surface.
 import { CompactSign, SignJWT } from "jose";
@@ -8,7 +8,7 @@ import { verifyAdminCookieValue } from "@/backend/common/auth/admin-session";
 
 const SECRET = new TextEncoder().encode(process.env.ADMIN_SESSION_SECRET);
 
-describe("verifyAdminCookieValue — algorithm and expiry enforcement (review MINOR 6)", () => {
+describe("verifyAdminCookieValue — algorithm and expiry enforcement", () => {
   it("accepts a validly signed, unexpired HS256 token", async () => {
     const token = await new SignJWT({ adminId: "a1", tokenVersion: 0 })
       .setProtectedHeader({ alg: "HS256" })

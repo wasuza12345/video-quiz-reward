@@ -42,12 +42,12 @@ describe("SESSION_LOADED — derives the starting status from server state (spec
     expect(s.showResumedBanner).toBe(true);
   });
 
-  it("review MAJOR: PAUSED with positionSec 6.9 → pendingSeekTo 6.9, so the player actually seeks to where the banner claims", () => {
+  it("PAUSED with positionSec 6.9 → pendingSeekTo 6.9, so the player actually seeks to where the banner claims", () => {
     const s = run([{ type: "SESSION_LOADED", session: session({ state: "PAUSED", positionSec: 6.9, furthestSec: 6.9 }) }]);
     expect(s.pendingSeekTo).toBe(6.9);
   });
 
-  it("planner review (replay restarts from 0): a brand new session (positionSec 0) still seeks to 0, not null", () => {
+  it("a brand new session (positionSec 0) still seeks to 0, not null (replay restarts from 0)", () => {
     // Was previously conditional on positionSec > 0, on the assumption a fresh player already
     // sits at 0 on its own — true after a real reload, false for an in-app replay of the same
     // video: useYouTubePlayer's effect never reruns, so the SAME player instance is reused, still
@@ -57,7 +57,7 @@ describe("SESSION_LOADED — derives the starting status from server state (spec
     expect(s.pendingSeekTo).toBe(0);
   });
 
-  it("review MAJOR: a resumed QUIZ_PENDING session also seeks to its (nonzero) position, not just PAUSED", () => {
+  it("a resumed QUIZ_PENDING session also seeks to its (nonzero) position, not just PAUSED", () => {
     const s = run([{ type: "SESSION_LOADED", session: session({ state: "QUIZ_PENDING", currentQuestionId: "q1", positionSec: 13, furthestSec: 13 }) }]);
     expect(s.pendingSeekTo).toBe(13);
   });
@@ -141,7 +141,7 @@ describe("quiz gate (rows 9-12)", () => {
   });
 });
 
-describe("EVENTS_SYNCED — every accepted events response (review BLOCKER: previously dispatched nowhere)", () => {
+describe("EVENTS_SYNCED — every accepted events response is dispatched", () => {
   const playing = run([{ type: "SESSION_LOADED", session: session() }, { type: "PLAY_CLICKED" }]);
 
   it("row 6: an ordinary accepted sync just advances positionSec/furthestSec, status untouched", () => {

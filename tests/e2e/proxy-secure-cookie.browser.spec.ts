@@ -1,4 +1,4 @@
-// P6-early — proxy.ts item 8: `Secure` on http://localhost. Needs a real browser cookie jar
+// proxy.ts item 8: `Secure` on http://localhost. Needs a real browser cookie jar
 // (unlike the `request`-fixture tests in proxy.spec.ts), because it's the BROWSER, not the
 // server, that decides whether to keep a Secure-flagged cookie set over plain http. Runs on both
 // the "chromium" and "webkit" projects (see playwright.config.ts testMatch).

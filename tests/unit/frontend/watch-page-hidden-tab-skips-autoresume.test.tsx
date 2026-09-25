@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Planner review round 5, MINOR: the 900ms auto-resume after a correct answer called
+// The 900ms auto-resume after a correct answer used to call
 // player.playVideo() unconditionally, even if the tab was hidden by the time the timer fired. A
 // hidden tab never gets rAF ticks (browsers throttle/stop them), so this silently started real
 // playback (and real server-side progress) the viewer couldn't see or pause — and useWatchTracker's
@@ -44,7 +44,7 @@ const CORRECT_LABEL = "D";
 
 const ME_RESPONSE: MeResponse = { totalPoints: 0, rewardedVideoIds: [] };
 // Starts already at the quiz gate, matching a session resumed right at the trigger — sidesteps
-// needing real rAF-driven playback to reach it first, which isn't what this MINOR is about.
+// needing real rAF-driven playback to reach it first, which isn't the point of this test.
 const SESSION_RESPONSE: SessionCreateResponse = {
   sessionId: "sess-1",
   state: "QUIZ_PENDING",
@@ -95,7 +95,7 @@ vi.mock("@/frontend/public/services/api", () => ({
   },
 }));
 
-/** Just tracks calls — this MINOR is about whether playVideo() gets called at all while hidden,
+/** Just tracks calls — this test is about whether playVideo() gets called at all while hidden,
  * not about real elapsed playback. */
 class TrackingPlayer {
   static instances: TrackingPlayer[] = [];
@@ -203,7 +203,7 @@ function playButton(): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>(`button[aria-label="${copy.controlBar.playAriaLabel}"]`);
 }
 
-describe("WatchPage: hidden tab skips the 900ms quiz auto-resume (planner review round 5, MINOR, must fail on d4c9cfa)", () => {
+describe("WatchPage: hidden tab skips the 900ms quiz auto-resume", () => {
   it("tab hidden through the whole 900ms window: never calls playVideo(), stays paused, resumes only on an explicit tap", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => root.render(<WatchPage videoId="v1" />));

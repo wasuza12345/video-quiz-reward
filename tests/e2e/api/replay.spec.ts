@@ -1,4 +1,4 @@
-// P6-early — role scenario #3/#4: a replay session (created after the video is already
+// Role scenario #3/#4: a replay session (created after the video is already
 // rewarded for this user) earns 0 points even when honestly rewatched start to finish. Uses a
 // 6s fixture video (e2e-replay) so two full honest watches only cost ~13s of real wall time.
 import { expect, test } from "@playwright/test";

@@ -1,4 +1,4 @@
-// P6b flow 3 — the quiz dialog is non-dismissible: pressing Escape (even twice, which can force
+// The quiz dialog is non-dismissible: pressing Escape (even twice, which can force
 // Chromium's CloseWatcher to fire a native `close` despite `preventDefault()` on the first —
 // src/frontend/shared/ui/Modal.tsx) must not let the viewer skip the question.
 import { expect, test } from "@playwright/test";

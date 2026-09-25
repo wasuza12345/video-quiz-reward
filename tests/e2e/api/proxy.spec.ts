@@ -1,4 +1,4 @@
-// P6-early — proxy.ts coverage (plan §10 "P6 must also cover proxy.ts", items 1-7; item 8 is
+// proxy.ts coverage (plan §10, items 1-7; item 8 is
 // proxy-secure-cookie.browser.spec.ts). Every test builds its own UserSession(s) — its own
 // cookie identity — never sharing one across tests.
 import { expect, test, request as playwrightRequest } from "@playwright/test";
@@ -104,7 +104,6 @@ test("5. matcher: /watch/* and /api/* get the cookie; /_next/static/* does not",
 });
 
 test("7. /admin/* is guarded: unauthenticated page requests redirect to login, API requests get 401", async () => {
-  // src/proxy.ts's adminGuard() landed with P5a — this was a test.fail trip-wire before that.
   const anon = await playwrightRequest.newContext({ baseURL: BASE_URL });
   try {
     const user = new UserSession(anon);

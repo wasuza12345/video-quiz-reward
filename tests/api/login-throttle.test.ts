@@ -1,8 +1,8 @@
 // Exercises login-throttle.ts's threshold/window/reservation logic directly (no bcrypt) — the
-// admin-auth API test proves the cheap ip+email lock (and the MAJOR device-cookie fix) end-to-end
+// admin-auth API test proves the cheap ip+email lock (and the device-cookie skip) end-to-end
 // through the real login endpoint; the 50/hour email-only limit and its window reset are proven
 // here instead, since driving 50+ attempts through bcrypt would make the suite noticeably slower
-// for no extra coverage (review MINOR 6).
+// for no extra coverage.
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { emailThrottleKey, ipThrottleKey, pruneStaleThrottleRows, reserveLoginAttempt, resetLoginThrottle } from "@/backend/common/auth/login-throttle";
@@ -16,7 +16,7 @@ async function failNTimes(email: string, ip: string, n: number) {
   for (let i = 0; i < n; i++) await reserveLoginAttempt(email, ip, { skipEmailCap: false });
 }
 
-describe("login-throttle: reserveLoginAttempt (review MINOR 1: reserve-before-check)", () => {
+describe("login-throttle: reserveLoginAttempt (reserve-before-check)", () => {
   afterAll(() => prisma.$disconnect());
 
   it("is not blocked before any failures", async () => {
@@ -57,7 +57,7 @@ describe("login-throttle: reserveLoginAttempt (review MINOR 1: reserve-before-ch
     expect(status.blocked).toBe(false);
   });
 
-  it("review round 2 MINOR B: retries DURING an active lock don't push failCount up, so the lock's expiry buys a full fresh set of attempts", async () => {
+  it("retries DURING an active lock don't push failCount up, so the lock's expiry buys a full fresh set of attempts", async () => {
     const email = testEmail();
     const ip = "5.5.5.6";
     await failNTimes(email, ip, 6); // trips the lock on the 6th

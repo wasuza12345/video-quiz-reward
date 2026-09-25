@@ -1,4 +1,4 @@
-// P6b flow 2 — refresh mid-video: reload at ~6s shows the resumed position, and the first TICK
+// Refresh mid-video: reload at ~6s shows the resumed position, and the first TICK
 // the client sends after pressing Play again is at/after that position (no regression back to 0).
 import { expect, test, type Response } from "@playwright/test";
 import { clickPlayPause } from "../helpers/watch";

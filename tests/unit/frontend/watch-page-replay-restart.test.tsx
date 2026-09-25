@@ -129,8 +129,8 @@ class ReplayTestPlayer {
    * unmounts this container — and the real YT iframe with it. useYouTubePlayer's effect never
    * reruns for a same-video replay, so `player` (React state) keeps referencing this same
    * instance regardless; its postMessage-based commands then silently go nowhere, exactly like a
-   * detached real iframe (confirmed against real Chrome — see WatchPage.tsx's isLoading comment,
-   * planner review round 4). Modelled here so this suite can actually catch a regression of that
+   * detached real iframe (confirmed against real Chrome — see WatchPage.tsx's isLoading comment).
+   * Modelled here so this suite can actually catch a regression of that
    * fix, not just the separate "seekTo alone is a no-op on ENDED" behavior. */
   private isAttached(): boolean {
     return document.body.contains(this.container);
@@ -242,7 +242,7 @@ function toggleButton(): HTMLButtonElement {
   return btn;
 }
 
-describe("WatchPage: in-app replay (no reload) restarts from 0 (planner review, must fail on 85f71dd)", () => {
+describe("WatchPage: in-app replay (no reload) restarts from 0", () => {
   it("end -> claim -> replay -> label 0:00 -> Play -> PLAY sent and playback advances -> reaches the quiz gate", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => root.render(<WatchPage videoId="v1" />));

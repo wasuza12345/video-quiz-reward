@@ -1,6 +1,6 @@
 // Read-only verification against the same e2e.db file the app server writes to, for internal
-// fields the public API never exposes (e.g. `flagged` — there is no admin API to read it yet,
-// P5). Raw @libsql/client rather than the generated Prisma client: the "prisma-client" generator
+// fields the public API never exposes (e.g. `flagged` — there is no admin API to read it yet).
+// Raw @libsql/client rather than the generated Prisma client: the "prisma-client" generator
 // output is ESM-only and doesn't load under Playwright's test transform. A second connection is
 // safe for reads under sqlite's file locking; retry on rare SQLITE_BUSY from the app server's own
 // writes landing at the same instant.

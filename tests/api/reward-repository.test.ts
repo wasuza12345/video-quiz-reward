@@ -1,5 +1,5 @@
 // Repo-level (not through the API): pins the P2002 → awarded:false branch of createLedgerRow
-// directly, since it's the actual concurrency guard for claim (plan §3, §4.2 review MINOR 3).
+// directly, since it's the actual concurrency guard for claim (plan §3, §4.2).
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createRewardRepository } from "@/backend/modules/reward/reward.repository";

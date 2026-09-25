@@ -1,8 +1,7 @@
-// Planner review (clean-code MAJOR): buildFlagReason used to count NOT_WATCHED toward "ถูกปฏิเสธ
-// สะสม", duplicating a hardcoded soft-reject set instead of sharing SOFT_REJECT_REASONS with the
-// server's own softRejectCount (shared/constants/session.ts, planner review round 4 BLOCKER #3:
-// NOT_WATCHED can legitimately fire many times for one honest ENDED-recovery retry loop and must
-// never count as a soft reject). Must fail before that shared-constant fix.
+// buildFlagReason must share SOFT_REJECT_REASONS with the server's own softRejectCount
+// (shared/constants/session.ts) rather than hardcoding its own soft-reject set: NOT_WATCHED can
+// legitimately fire many times for one honest ENDED-recovery retry loop and must never count
+// toward "ถูกปฏิเสธสะสม".
 import { describe, expect, it } from "vitest";
 import { buildFlagReason } from "@/frontend/admin/pages/AdminSessionDetailPage";
 import type { AdminSessionEventRow } from "@/shared/contracts/admin";

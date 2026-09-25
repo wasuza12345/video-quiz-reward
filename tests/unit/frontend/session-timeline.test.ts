@@ -54,7 +54,7 @@ describe("findFlagTriggerEventId (spec §5.7: first SEEK_FORWARD, or the 3rd sof
     expect(findFlagTriggerEventId(events)).toBe(6);
   });
 
-  it("NOT_WATCHED never counts toward the soft-reject flag, no matter how many in a row (planner review round 4, BLOCKER #3: an honest client-side bug used to re-send it ~110 times)", () => {
+  it("NOT_WATCHED never counts toward the soft-reject flag, no matter how many in a row (an honest client-side bug can re-send it ~110 times)", () => {
     const events = Array.from({ length: 110 }, (_, i) => event({ id: i + 1, accepted: false, rejectReason: "NOT_WATCHED" }));
     expect(findFlagTriggerEventId(events)).toBeNull();
   });

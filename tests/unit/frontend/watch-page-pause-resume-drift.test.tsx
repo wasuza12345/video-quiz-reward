@@ -180,7 +180,7 @@ function resyncToastVisible(): boolean {
   return Array.from(container.querySelectorAll('[role="status"]')).some((el) => el.textContent === copy.toast.resync);
 }
 
-describe("WatchPage + real WatchTracker: pause/resume drift (planner review round 2, must fail on 96893d3)", () => {
+describe("WatchPage + real WatchTracker: pause/resume drift", () => {
   it("5 pause/resume cycles with a ~0.27s YouTube pause-settle drift trigger no seek guard and no resync toast", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => {
@@ -196,8 +196,8 @@ describe("WatchPage + real WatchTracker: pause/resume drift (planner review roun
     await flush(); // PLAYING -> PLAY_CLICKED -> status "playing" -> tracker's rAF loop starts (active === true)
 
     // Baseline, not 0: SESSION_LOADED now always seeks to positionSec (including 0) so an in-app
-    // replay of the same video restarts a reused, still-ENDED player (planner review round 3,
-    // "replay restarts from 0") — a fresh player's own one-time seekTo(0, true) on session load
+    // replay of the same video restarts a reused, still-ENDED player ("replay restarts from 0")
+    // — a fresh player's own one-time seekTo(0, true) on session load
     // is expected and unrelated to the anti-cheat concern this test covers.
     const baselineSeekToCallCount = player!.seekToCallCount;
 

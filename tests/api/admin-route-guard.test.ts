@@ -1,5 +1,5 @@
-// A structural guard, not a feature test (review MINOR 5): every admin route — present now or
-// added later in P5b — must reject a validly-signed-but-REVOKED admin JWT with 401. It discovers
+// A structural guard, not a feature test: every admin route — present now or
+// added later — must reject a validly-signed-but-REVOKED admin JWT with 401. It discovers
 // route files on disk rather than importing them by name one at a time, specifically so it stays
 // green (or fails loudly) as new admin routes are added, without anyone remembering to update it.
 import { readdirSync } from "node:fs";
@@ -26,7 +26,7 @@ function findRouteFiles(dir: string): string[] {
 
 const routeFiles = findRouteFiles(ADMIN_API_ROOT).filter((f) => !EXEMPT.has(relative(ADMIN_API_ROOT, f)));
 
-describe("every admin API route requires a non-revoked admin session (review MINOR 5)", () => {
+describe("every admin API route requires a non-revoked admin session", () => {
   afterAll(() => prisma.$disconnect());
 
   it("found at least one guarded route file — a broken discovery path must not make this suite vacuously pass", () => {

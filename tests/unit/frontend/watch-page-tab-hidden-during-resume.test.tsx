@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// Planner review round 4, BLOCKER #1: an honest viewer answered a quiz correctly, then backgrounded
+// An honest viewer answered a quiz correctly, then backgrounded
 // the tab for a moment (a real, ordinary thing to do) before the 900ms auto-resume timer fired —
-// and lost 30s of TICKs entirely (dev.db: zero TICKs while the video visibly kept playing to the
+// and used to lose 30s of TICKs entirely (zero TICKs while the video visibly kept playing to the
 // end, furthest stuck at the quiz trigger).
 //
 // Root cause: the TAB_HIDDEN handler called player.pauseVideo() unconditionally, even while
@@ -47,8 +47,8 @@ const CORRECT_LABEL = "D";
 
 const ME_RESPONSE: MeResponse = { totalPoints: 0, rewardedVideoIds: [] };
 // Starts already at the quiz gate (matches a session resumed right at the trigger) — sidesteps
-// needing to reach it via real rAF-driven playback tracking first, which isn't what BLOCKER #1 is
-// about; the bug is specifically about what happens to the tracker loop AFTER answering.
+// needing to reach it via real rAF-driven playback tracking first; this test is specifically about
+// what happens to the tracker loop AFTER answering.
 const SESSION_RESPONSE: SessionCreateResponse = {
   sessionId: "sess-1",
   state: "QUIZ_PENDING",
@@ -233,7 +233,7 @@ function findChoiceButton(text: string): HTMLButtonElement {
   return btn;
 }
 
-describe("WatchPage: TAB_HIDDEN during the quiz auto-resume window (planner review round 4, must fail on 85f71dd)", () => {
+describe("WatchPage: TAB_HIDDEN during the quiz auto-resume window", () => {
   it("wrong x3 -> correct -> tab hidden/visible before the 900ms auto-resume -> TICKs keep flowing -> reaches ENDED -> claims", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => root.render(<WatchPage videoId="v1" />));
@@ -278,7 +278,7 @@ describe("WatchPage: TAB_HIDDEN during the quiz auto-resume window (planner revi
     expect(postEventsCalls.some((e) => e.type === "PLAY"), "the auto-resume's PLAY must have been sent").toBe(true);
 
     // Drive the fake player forward in real time toward the end, exactly like a real, unattended
-    // honest playthrough — if the tracker loop silently stopped (BLOCKER #1, unfixed), nothing
+    // honest playthrough — if the tracker loop silently stopped, nothing
     // here queues or sends any TICKs, and furthestSec would stay stuck at TRIGGER_SEC.
     const driveInterval = setInterval(() => player.tickTowardEnd(), 50);
     try {

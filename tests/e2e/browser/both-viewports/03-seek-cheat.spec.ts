@@ -1,4 +1,4 @@
-// P6b flow 4 — cheating via the player directly (`player.seekTo(40)`, as a devtools/console
+// Cheating via the player directly (`player.seekTo(40)`, as a devtools/console
 // attack would): the client's rAF seek guard (watch-tracker-core.ts) snaps it back to the local
 // high-water mark on the very next frame and shows the resync toast — no server round trip
 // needed for this to be caught — and there is no reward.

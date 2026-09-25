@@ -1,5 +1,4 @@
-// P6b flow (added per planner review of 9eaddf7/one-shot-seek-guard): reload BEFORE the quiz
-// trigger, not after — the honest-flow spec (01) never reloads, and the refresh spec
+// Reload BEFORE the quiz trigger, not after — the honest-flow spec (01) never reloads, and the refresh spec
 // (both-viewports/01-refresh.spec.ts) never reaches the quiz or the reward. This covers the gap:
 // a resumed session must still be able to reach the quiz, answer correctly, finish, and get
 // rewarded — proving the resume-seek path doesn't leave the player wedged for a *normal* forward

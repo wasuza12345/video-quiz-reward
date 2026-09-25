@@ -1,6 +1,6 @@
-// Regression case for fix/replay-restart's BLOCKER #1/#2 fixes (TAB_HIDDEN during the quiz
-// auto-resume window silently killing the TICK loop; ENDED_NOT_WATCHED recovery looping forever):
-// three wrong answers in a row before the correct one exercises the quiz retry UI and the
+// Regression case: TAB_HIDDEN during the quiz auto-resume window used to silently kill the TICK
+// loop, and ENDED_NOT_WATCHED recovery used to loop forever. Three wrong answers in a row before
+// the correct one exercises the quiz retry UI and the
 // anti-cheat resume path more than the single-wrong-answer honest-flow spec does, then still
 // finishes honestly for the reward. Every POST /events is logged and asserted 0-rejected.
 import { expect, test } from "@playwright/test";

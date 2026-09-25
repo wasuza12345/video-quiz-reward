@@ -2,13 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { VideoForm } from "@/frontend/admin/components/VideoForm";
 
-// QuestionCard calls useRouter() (for the UNAUTHENTICATED redirect, review round 3 MINOR 3), which
+// QuestionCard calls useRouter() (for the UNAUTHENTICATED redirect), which
 // throws outside a mounted Next.js app router — stub it so a bare renderToStaticMarkup works here.
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 const { QuestionCard } = await import("@/frontend/admin/components/QuizEditor");
 
-// review round 3 MINOR 5: "form fields have no accessible names ... Tester's Playwright will use
-// getByLabel" — these checks approximate what getByLabel needs (a <label for> pointing at a real
+// Form fields need accessible names for Playwright's getByLabel to find them — these checks
+// approximate what getByLabel needs (a <label for> pointing at a real
 // input id, or an aria-label on the input itself) without pulling in jsdom/RTL as new dependencies:
 // react-dom/server is already a transitive dependency of this Next.js app.
 

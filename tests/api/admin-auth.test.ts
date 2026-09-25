@@ -94,7 +94,7 @@ describe("POST /api/admin/auth/login", () => {
     expect(otherIp.status).toBe(200);
   });
 
-  it("review MAJOR: a known-device cookie skips the email-wide 50/hour cap", async () => {
+  it("a known-device cookie skips the email-wide 50/hour cap", async () => {
     const admin = await createTestAdmin();
     const first = await postLogin(adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password }, ip: "50.50.50.1" }));
     const deviceCookie = first.cookies.get(ADMIN_DEVICE_COOKIE_NAME)!.value;
@@ -111,7 +111,7 @@ describe("POST /api/admin/auth/login", () => {
     expect(withDevice.status).toBe(200);
   });
 
-  it("review MAJOR: without a device cookie, the same correct credentials hit the tripped email cap", async () => {
+  it("without a device cookie, the same correct credentials hit the tripped email cap", async () => {
     // A separate admin from the test above — a successful login clears the throttle rows, so
     // sharing one admin across both assertions would let the first (device-cookie) success reset
     // the cap this test needs to still be tripped.
@@ -161,7 +161,7 @@ describe("admin session: GET /me, POST /logout, tokenVersion revoke (plan §7)",
     expect(await res.json()).toEqual({ id: admin.id, email: admin.email });
   });
 
-  it("logout without a matching origin → 403 BAD_ORIGIN (never gets to revoke), but the cookie is still cleared (review MINOR 4)", async () => {
+  it("logout without a matching origin → 403 BAD_ORIGIN (never gets to revoke), but the cookie is still cleared", async () => {
     const admin = await createTestAdmin();
     const login = await postLogin(adminRequest(LOGIN_URL, { body: { email: admin.email, password: admin.password } }));
     const cookie = login.cookies.get(ADMIN_COOKIE_NAME)!.value;
@@ -171,7 +171,7 @@ describe("admin session: GET /me, POST /logout, tokenVersion revoke (plan §7)",
     expect(res.cookies.get(ADMIN_COOKIE_NAME)?.value).toBe("");
   });
 
-  it("logout with no session at all (already logged out / expired) → 401, cookie still cleared (review MINOR 4)", async () => {
+  it("logout with no session at all (already logged out / expired) → 401, cookie still cleared", async () => {
     const res = await postLogout(adminRequest(LOGOUT_URL, { adminCookie: "not-a-real-jwt" }));
     expect(res.status).toBe(401);
     expect(res.cookies.get(ADMIN_COOKIE_NAME)?.value).toBe("");

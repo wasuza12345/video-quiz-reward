@@ -1,4 +1,4 @@
-// P6b flow 5 (admin CRUD + timeline) and flow 6 (logout). Desktop-only — the admin panel is a
+// Admin CRUD + timeline, and logout. Desktop-only — the admin panel is a
 // data-table-heavy backoffice; the mobile-vs-desktop CSS pairing is exercised lightly by the
 // AdminShell nav (both markups always render, CSS toggles which is visible), not by this flow's
 // business logic, so duplicating the ~real-video-touching parts at 390×844 wouldn't add much.
@@ -39,7 +39,7 @@ test("create video → publish → feature → shows on / → session timeline �
   await exposeYouTubePlayerOnWindow(page);
   await adminLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-  const videoTitle = `P6b admin test ${Date.now()}`;
+  const videoTitle = `admin test ${Date.now()}`;
 
   // Looked up up front (not inside a later step) so the finally-block restore below can run even
   // if this test fails before ever reaching the step that used to compute it — this test's own

@@ -1,4 +1,4 @@
-// P6-early — the honest flow (plan §5, §6): PLAY → TICKs to the quiz gate → wrong answer (retry)
+// The honest flow (plan §5, §6): PLAY → TICKs to the quiz gate → wrong answer (retry)
 // → correct answer → PLAY → TICKs to the end → ENDED → claim +50 exactly once, even under a
 // concurrent double-claim → GET /api/me reflects it → a fresh POST /api/sessions afterwards
 // starts a replay but still reports alreadyRewarded. Also role scenario #1 (correct/incorrect

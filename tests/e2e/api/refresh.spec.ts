@@ -1,4 +1,4 @@
-// P6-early — refresh (role scenario #5): reloading mid-video resumes the SAME session, paused,
+// Refresh (role scenario #5): reloading mid-video resumes the SAME session, paused,
 // at the last server-confirmed position, with points untouched. (Refresh after finishing —
 // alreadyRewarded / totalPoints surviving a brand new session — is covered at the tail of
 // honest-flow.spec.ts, since it needs an already-rewarded session to refresh from.)

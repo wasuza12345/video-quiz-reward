@@ -180,7 +180,7 @@ function probePosition(): number {
   return Number(el.getAttribute("data-position"));
 }
 
-describe("usePlayerProgress: planner review follow-up (progress band never shrinks)", () => {
+describe("usePlayerProgress: progress band never shrinks", () => {
   it("the watched band never goes below the server furthestSec after a backward reconcile", async () => {
     // getMaxReached simulates the tracker having just been reconcile()'d down to a resumed/
     // seeked-to position (reducer:170's resume-with-positionSec<furthestSec, or reducer:301's

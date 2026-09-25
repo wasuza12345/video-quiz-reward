@@ -1,4 +1,4 @@
-// P6-early — anti-cheat (plan §6, role scenario #3): forward seeks, forged/faked progress, and
+// Anti-cheat (plan §6, role scenario #3): forward seeks, forged/faked progress, and
 // calling ENDED/claim directly without the required watch time are all rejected server-side.
 // Each test gets its own fresh `request` context (own cookie => own user => own fresh session),
 // so they can safely share the same throwaway fixture video without interfering with each other.
@@ -68,13 +68,12 @@ test("ENDED before 0.9×duration of real play time is rejected (NOT_WATCHED), bu
   expect(body.results[0]).toMatchObject({ accepted: false, rejectReason: "NOT_WATCHED" });
   expect(body.state, "a rejected ENDED must not move the session to ENDED").not.toBe("ENDED");
 
-  // remainingWatchSec (planner review round 5, MAJOR): the client's own ENDED recovery seek needs
+  // remainingWatchSec: the client's own ENDED recovery seek needs
   // this authoritative figure — almost no real time passed since PLAY, so it's still close to the
   // full 0.9×duration requirement.
   expect(body.remainingWatchSec, "remainingWatchSec must be reported and reflect the near-full deficit").toBeGreaterThan(0.9 * video.durationSec - 2);
 
-  // NOT_WATCHED deliberately never counts as a soft reject (planner review round 4, BLOCKER #3):
-  // an honest client-side seek-back/recovery bug could re-fire it many times for one real
+  // NOT_WATCHED deliberately never counts as a soft reject: an honest client-side seek-back/recovery bug could re-fire it many times for one real
   // session (dev.db: ~110 in a row), unlike SPEED_EXCEEDED, which only fires once per genuine
   // cheat attempt — flagging on it punished the honest viewer, not a cheater.
   const flags = await readSessionFlags(sessionId);

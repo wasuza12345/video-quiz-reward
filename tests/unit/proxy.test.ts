@@ -1,6 +1,6 @@
 // proxy.ts is a plain (request) => Promise<NextResponse> function — no Next.js server needed to
-// exercise it directly. Covers the P5a admin guard specifically (the vq_uid-issuing half is
-// unrelated to this phase and already implicitly covered by every API test that hits a route).
+// exercise it directly. Covers the admin guard specifically (the vq_uid-issuing half is
+// already implicitly covered by every API test that hits a route).
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import { issueAdminCookieValue } from "@/backend/common/auth/admin-session";
@@ -60,13 +60,13 @@ describe("proxy — admin guard (plan §7)", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("POST /api/admin/auth/logout with a garbage cookie → 401, and clears vq_admin (review MINOR 4: this never reaches the controller)", async () => {
+  it("POST /api/admin/auth/logout with a garbage cookie → 401, and clears vq_admin (this never reaches the controller)", async () => {
     const res = await proxy(req("/api/admin/auth/logout", "vq_admin=not-a-jwt", "POST"));
     expect(res.status).toBe(401);
     expect(res.cookies.get("vq_admin")?.value).toBe("");
   });
 
-  it("GET /api/admin/auth/logout does NOT clear the cookie, even with one present (review round 2 MINOR A: a cross-site <img> GET must not force a logout)", async () => {
+  it("GET /api/admin/auth/logout does NOT clear the cookie, even with one present (a cross-site <img> GET must not force a logout)", async () => {
     const res = await proxy(req("/api/admin/auth/logout", "vq_admin=not-a-jwt", "GET"));
     expect(res.status).toBe(401);
     expect(res.cookies.get("vq_admin")).toBeUndefined();

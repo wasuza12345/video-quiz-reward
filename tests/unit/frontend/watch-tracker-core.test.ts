@@ -56,7 +56,7 @@ describe("WatchTracker.onFrame — anti-cheat per-frame checks (plan §6)", () =
   });
 });
 
-describe("WatchTracker.noteSettled — trust a confirmed PAUSED/genuine-PLAYING position outright (planner review: pause-resume false resync, rounds 1+2)", () => {
+describe("WatchTracker.noteSettled — trust a confirmed PAUSED/genuine-PLAYING position outright", () => {
   it("raises the high-water mark to the settled position, then honest playback from there advances normally with no seek_guard", () => {
     const t = new WatchTracker(6.91);
     t.noteSettled(7.18); // e.g. the PLAYING read revealing the ~0.27s pause-settle creep
@@ -94,7 +94,7 @@ describe("WatchTracker.noteSettled — trust a confirmed PAUSED/genuine-PLAYING 
   });
 });
 
-describe("WatchTracker — rAF gap and drag tolerance (review MINOR/BLOCKER acceptance)", () => {
+describe("WatchTracker — rAF gap and drag tolerance", () => {
   it("a 1.2s rAF gap is accepted as an advance, not snapped back", () => {
     const t = new WatchTracker(10);
     const d = t.onFrame(11.2, 1.2, [], []); // frameDtSec=1.2 → advanceThreshold = max(0.25, 2.4) = 2.4
@@ -110,9 +110,9 @@ describe("WatchTracker — rAF gap and drag tolerance (review MINOR/BLOCKER acce
   });
 });
 
-describe("WatchTracker — 20s of honest 1× playback with periodic server syncs (plan §6, review BLOCKER)", () => {
+describe("WatchTracker — 20s of honest 1× playback with periodic server syncs (plan §6)", () => {
   /**
-   * This is the exact bug the reviewer found in production on commit 136a73e: the seek guard
+   * This is the exact bug found in production: the seek guard
    * compared against the reducer's server-synced furthestSec, which only moved every ~5s (and,
    * separately, never moved at all for a new session because accepted responses were never
    * dispatched anywhere — see EVENTS_SYNCED in watch.reducer.ts). A quick reproduction of that

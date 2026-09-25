@@ -17,7 +17,7 @@ import { YT_PLAYER_STATE } from "@/frontend/public/hooks/useYouTubePlayer";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
 // A spy, not a no-op: the swallowed-PLAYING test below asserts this is never called for a
-// spurious PLAYING (planner review round 2 — noteSettled must only trust a GENUINE play/pause).
+// spurious PLAYING — noteSettled must only trust a GENUINE play/pause.
 const { noteSettledSpy } = vi.hoisted(() => ({ noteSettledSpy: vi.fn() }));
 vi.mock("@/frontend/public/hooks/useWatchTracker", () => ({
   useWatchTracker: () => ({ isGateInFlight: () => false, getMaxReached: () => 0, noteSettled: noteSettledSpy }),
@@ -189,7 +189,7 @@ async function mountAndArmGuard(): Promise<FakePlayer> {
   return instance;
 }
 
-describe("WatchPage autoplay guard one-shot behaviour (planner follow-up review)", () => {
+describe("WatchPage autoplay guard one-shot behaviour", () => {
   it("a non-autoplaying seek's guard does not swallow the later quiz auto-resume play", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => root.render(<WatchPage videoId="v1" />));
@@ -224,8 +224,7 @@ describe("WatchPage autoplay guard one-shot behaviour (planner follow-up review)
     // the guard's own tell, independent of reducer state (PLAY_CLICKED is itself a no-op while
     // quiz_open, so a status/DOM check here couldn't distinguish swallowed from not-swallowed).
     expect(instance.pauseVideoCallCount, "a spurious PLAYING while armed must be paused straight back").toBe(1);
-    // A swallowed PLAYING is not a genuine settle — must not raise the tracker's high-water mark
-    // (planner review round 2's acceptance: "the swallowed-PLAYING path doesn't call it").
+    // A swallowed PLAYING is not a genuine settle — must not raise the tracker's high-water mark.
     expect(noteSettledSpy, "noteSettled must not be called for a spurious/swallowed PLAYING").not.toHaveBeenCalled();
   }, 15_000);
 

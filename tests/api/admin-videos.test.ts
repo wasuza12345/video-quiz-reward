@@ -263,7 +263,7 @@ describe("admin video CRUD (plan §4.4/§4.5/§7)", () => {
       const b = await (
         await createVideo(adminRequest(VIDEOS_URL, { body: { youtubeUrl: randomYoutubeId(), durationSec: 40, rewardPoints: 10 }, adminCookie: cookie }))
       ).json();
-      // Only a published video can be featured (review round 2 MINOR 4).
+      // Only a published video can be featured.
       await publishVideo(adminRequest(`${VIDEOS_URL}/${a.id}/publish`, { adminCookie: cookie }), paramsOf(a.id));
       await publishVideo(adminRequest(`${VIDEOS_URL}/${b.id}/publish`, { adminCookie: cookie }), paramsOf(b.id));
 
@@ -279,7 +279,7 @@ describe("admin video CRUD (plan §4.4/§4.5/§7)", () => {
   });
 });
 
-describe("review round 2 MAJOR: shortening durationSec must not strand an existing question", () => {
+describe("shortening durationSec must not strand an existing question", () => {
   afterAll(() => prisma.$disconnect());
 
   it("PATCH durationSec that pushes an existing question's trigger past the new gate window → 422 INVALID_TRIGGER, and the video is left unchanged", async () => {
@@ -331,7 +331,7 @@ describe("review round 2 MAJOR: shortening durationSec must not strand an existi
   });
 });
 
-describe("review round 2 MAJOR: publish re-validates every question", () => {
+describe("publish re-validates every question", () => {
   afterAll(() => prisma.$disconnect());
 
   it("publishing a video whose question no longer fits its duration → 422 INVALID_TRIGGER, stays draft", async () => {
@@ -348,7 +348,7 @@ describe("review round 2 MAJOR: publish re-validates every question", () => {
       paramsOf(created.id),
     );
     // Directly corrupt the stored question's triggerSec to simulate one that predates a duration
-    // shortcut the MAJOR fix's own PATCH guard would otherwise have caught — publish is the last line of defense.
+    // shortcut the PATCH guard would otherwise have caught — publish is the last line of defense.
     await prisma.quizQuestion.updateMany({ where: { videoId: created.id }, data: { triggerSec: 59 } });
 
     const res = await publishVideo(adminRequest(`${VIDEOS_URL}/${created.id}/publish`, { adminCookie: cookie }), paramsOf(created.id));
@@ -370,7 +370,7 @@ describe("review round 2 MAJOR: publish re-validates every question", () => {
   });
 });
 
-describe("review round 2 MINOR 4: status transition rules", () => {
+describe("status transition rules", () => {
   afterAll(() => prisma.$disconnect());
 
   it("feature on a non-published (draft) video → 409 INVALID_TRANSITION", async () => {
@@ -415,7 +415,7 @@ describe("review round 2 MINOR 4: status transition rules", () => {
   });
 });
 
-describe("review round 2 MINOR 1: AdminAuditLog", () => {
+describe("AdminAuditLog", () => {
   afterAll(() => prisma.$disconnect());
 
   it("one mutation writes exactly one audit row, with the acting admin, action, entity and entityId", async () => {

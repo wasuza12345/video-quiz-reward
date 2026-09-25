@@ -1,4 +1,4 @@
-// P6b flow 1 — the honest flow through the REAL public UI, against the real embedded YouTube
+// The honest flow through the REAL public UI, against the real embedded YouTube
 // iframe (not the API-level suite's simulated ticks): open `/`, the featured card, Play, the
 // quiz dialog opens at ~0:13, a wrong answer then the correct one, playback resumes and runs to
 // the end, the reward banner + points badge show +50, and it survives a reload. Every

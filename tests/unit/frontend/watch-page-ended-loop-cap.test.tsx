@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 //
-// Planner review round 4, BLOCKER #2: ENDED_NOT_WATCHED recovery must never loop — dev.db: once a
-// recovery's seek-back itself landed close enough to the true end, the player immediately re-fired
-// ENDED, ~110 times in a row, ~80ms apart, each one a soft reject (see BLOCKER #3's separate fix).
+// ENDED_NOT_WATCHED recovery must never loop: once a recovery's seek-back itself landed close
+// enough to the true end, the player used to immediately re-fire ENDED, ~110 times in a row,
+// ~80ms apart, each one a soft reject.
 //
-// Planner review round 5, MAJOR: the round-4 fix could still strand an honest viewer forever. If
+// That alone could still strand an honest viewer forever. If
 // the server's playedWallSec is short (credit is capped at 10s/event — a mobile stall, a slow
 // write, or background throttling can all make it fall behind) but furthestSec is already near the
 // end, the CLIENT's own (credit-capped, less reliable) local estimate of the deficit came out <= 0
@@ -41,7 +41,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 const DURATION_SEC = 12;
 const VIDEO_RULES: VideoRules = { durationSec: DURATION_SEC, questions: [] };
 const REQUIRED_WALL_SEC = 0.9 * DURATION_SEC; // 10.8
-const INITIAL_DEFICIT_SEC = 8; // "server playedWall 8s short" — planner review round 5's exact case
+const INITIAL_DEFICIT_SEC = 8; // server playedWall 8s short
 
 const VIDEO = { id: "v1", youtubeId: "X7K_Xlz3T1Y", title: "Test video", channelName: "Channel", durationSec: DURATION_SEC, rewardPoints: 50 };
 const SESSION_RESPONSE: SessionCreateResponse = {
@@ -237,7 +237,7 @@ async function wait(ms: number) {
   });
 }
 
-describe("WatchPage: ENDED_NOT_WATCHED recovery (planner review round 5, must fail on d4c9cfa)", () => {
+describe("WatchPage: ENDED_NOT_WATCHED recovery", () => {
   it("server playedWall 8s short, furthest at the end: recovers via real playback to ENDED accepted + claim +50, no reload, bounded ENDED sends", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => root.render(<WatchPage videoId="v1" />));

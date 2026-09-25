@@ -7,7 +7,7 @@ dotenv.config({ path: path.resolve(__dirname, ".env.e2e") });
 const PORT = process.env.E2E_PORT ?? "3100";
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
-// P6-early (API-level) E2E suite — plan §10. Real HTTP through proxy.ts against a fresh local
+// API-level E2E suite — plan §10. Real HTTP through proxy.ts against a fresh local
 // SQLite file DB (never Turso). Serial: several tests drive real wall-clock play time.
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -43,7 +43,7 @@ export default defineConfig({
     { name: "api", testDir: "./tests/e2e/api" },
     { name: "chromium", use: { ...devices["Desktop Chrome"] }, testMatch: "proxy-secure-cookie.browser.spec.ts" },
     { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: "proxy-secure-cookie.browser.spec.ts" },
-    // P6b — real-browser UI specs (plan §10 full list). desktop-only/ (the honest real-iframe
+    // Real-browser UI specs (plan §10 full list). desktop-only/ (the honest real-iframe
     // flow + the admin CRUD/timeline flow) only makes sense once, so only "ui-desktop" picks it
     // up; both-viewports/ (refresh, quiz Esc, the seekTo cheat) is cheap enough to run twice.
     // No --autoplay-policy override: Chromium's own "sticky activation" (the real Play click

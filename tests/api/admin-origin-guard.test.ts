@@ -1,6 +1,5 @@
 // A structural guard mirroring admin-route-guard.test.ts's discovery approach, but for the origin
-// check instead of the session check (review round 2, test sweep asked for alongside MINOR 5's
-// route guard): every mutating admin route (POST/PATCH/DELETE), except auth/login, must reject a
+// check instead of the session check: every mutating admin route (POST/PATCH/DELETE), except auth/login, must reject a
 // request with a valid admin session but no Origin header — 403 BAD_ORIGIN. GET routes are
 // excluded since origin-check only ever applies to mutations (plan §7).
 import { readdirSync } from "node:fs";
@@ -26,7 +25,7 @@ function findRouteFiles(dir: string): string[] {
 
 const routeFiles = findRouteFiles(ADMIN_API_ROOT).filter((f) => !EXEMPT.has(relative(ADMIN_API_ROOT, f)));
 
-describe("every mutating admin route rejects a missing Origin (review round 2 test sweep)", () => {
+describe("every mutating admin route rejects a missing Origin", () => {
   afterAll(() => prisma.$disconnect());
 
   it("found at least one guarded route file — a broken discovery path must not make this suite vacuously pass", () => {

@@ -184,7 +184,7 @@ describe("§5 soft-reject flagging", () => {
     expect(s).toMatchObject({ softRejectCount: 3, flagged: true });
   });
 
-  // NOT_WATCHED deliberately never counts (planner review round 4, BLOCKER #3): an honest
+  // NOT_WATCHED deliberately never counts: an honest
   // client-side bug could re-fire it many times for one real session — flagging on it punished
   // the honest viewer, not a cheater. Kept separate from the SPEED_EXCEEDED-only case above.
   it("NOT_WATCHED never adds to softRejectCount or flags, even after SPEED_EXCEEDED is already close to the threshold", () => {
