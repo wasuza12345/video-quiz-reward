@@ -1,0 +1,114 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Watch API Flow</title>
+<style>
+:root{--bg:#f7f8fa;--fg:#1c2230;--mut:#667085;--line:#cfd5df;--box:#fff;--acc:#2f5bd3;--ok:#1f8a4c;--bad:#c53030;--warn:#b7791f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171d;--fg:#e6e9ef;--mut:#98a2b3;--line:#2f3642;--box:#1c2029;--acc:#7ea0ff;--ok:#4cc38a;--bad:#f07070;--warn:#e0a84a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171d;--fg:#e6e9ef;--mut:#98a2b3;--line:#2f3642;--box:#1c2029;--acc:#7ea0ff;--ok:#4cc38a;--bad:#f07070;--warn:#e0a84a;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,sans-serif;padding:16px}
+.w{max-width:1100px;margin:0 auto;display:grid;gap:14px}
+h1{font-size:20px;margin:0}p{margin:0}.mut{color:var(--mut)}
+.nav{display:flex;flex-wrap:wrap;gap:6px}
+.nav button{font:inherit;font-size:13px;padding:5px 9px;border:1px solid var(--line);background:var(--box);color:var(--fg);border-radius:4px;cursor:pointer}
+.nav button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.diag{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--box)}
+svg{display:block;min-width:900px;width:100%}
+svg text{fill:var(--fg);font:13px system-ui}
+svg .lane{stroke:var(--line);stroke-dasharray:4 4}
+svg .hd{fill:var(--bg);stroke:var(--line)}
+svg .ar{stroke:var(--acc);stroke-width:2;fill:none}
+svg .ar.back{stroke:var(--ok);stroke-dasharray:6 4}
+svg .ar.bad{stroke:var(--bad)}
+svg .lbl{font:12px ui-monospace,monospace}
+svg .n{fill:var(--mut);font-size:11px}
+.detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.card{background:var(--box);border:1px solid var(--line);border-radius:6px;padding:12px;display:grid;gap:6px;align-content:start}
+.card h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+pre{margin:0;font:12.5px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}
+.row{display:flex;gap:8px;align-items:center}
+.row button{font:inherit;padding:7px 14px;border:1px solid var(--line);background:var(--box);color:var(--fg);border-radius:4px;cursor:pointer}
+code{font:12.5px ui-monospace,monospace}
+</style>
+<div class="w">
+<h1>Flow ดูคลิปรับแต้ม: client ↔ backend</h1>
+<p class="mut">กดทีละขั้น แต่ละขั้นมีลูกศรว่าใครยิงหาใคร, request/response จริงตาม <code>docs/plan/plan.md</code> §4 และโค้ดใน <code>src/app/api/**/route.ts</code> · <code>src/frontend/public/services/api.ts:41-51</code></p>
+<div class="nav" id="nav"></div>
+<div class="diag"><svg id="svg" viewBox="0 0 1000 300"></svg></div>
+<div class="row"><button id="prev">← ก่อนหน้า</button><button id="next">ถัดไป →</button><span class="mut" id="cnt"></span></div>
+<div class="detail">
+ <div class="card"><h3>เกิดอะไรขึ้น</h3><p id="what"></p></div>
+ <div class="card"><h3>Request → Response</h3><pre id="io"></pre></div>
+ <div class="card"><h3>Backend ทำอะไร (ชั้นในโค้ด)</h3><pre id="be"></pre></div>
+</div>
+</div>
+<script>
+// lanes: 0 ผู้ใช้/YouTube, 1 WatchPage (client), 2 proxy.ts, 3 route→controller, 4 service+domain, 5 DB (SQLite/Turso)
+const L=["ผู้ใช้ / YouTube","Browser (WatchPage)","proxy.ts","route → controller","service + domain","DB (Prisma)"];
+const S=[
+{t:"1. เปิดหน้าแรก",a:[[1,2,"GET /"],[2,1,"Set-Cookie vq_uid",1],[1,3,"GET /api/videos"],[3,5,"published videos"],[3,1,"{ featured, videos }",1]],
+ w:"เข้าเว็บครั้งแรก proxy.ts ออก cookie vq_uid (UUID ที่เซ็นไว้, httpOnly, 1 ปี) = ตัวตนแบบไม่ต้อง login แล้วหน้าแรกดึงรายการวิดีโอ",
+ io:"GET /api/videos\n← 200 { featured: Video|null,\n  videos:[{ id, youtubeId, title, durationSec, rewardPoints, rewarded }] }",
+ be:"proxy.ts: ไม่มี cookie / ลายเซ็นผิด → ออกใหม่\nvideo.service → repository: เฉพาะ status=published"},
+{t:"2. เปิด /watch/[id]",a:[[1,3,"GET /api/me"],[3,5,"sum PointsLedger"],[3,1,"{ totalPoints, rewardedVideoIds }",1]],
+ w:"เข้าหน้าดูคลิป โหลดแต้มรวมของผู้ใช้มาแสดงมุมจอ แต้มอยู่ใน DB ผูกกับ cookie จึงไม่หายตอน refresh",
+ io:"GET /api/me\n← 200 { totalPoints: 0, rewardedVideoIds: [] }",be:"me.service: รวมแต้มจาก PointsLedger ของ userId ใน cookie\nid ที่ยังไม่มีใน DB → 0 แต้ม"},
+{t:"3. สร้าง/ต่อ session",a:[[1,3,"POST /api/sessions"],[3,4,"resume-policy"],[4,5,"upsert User, find/create WatchSession"],[3,1,"{ sessionId, state, positionSec, quizzes }",1]],
+ w:"ขอ session การดู server ตัดสินว่าจะสร้างใหม่หรือต่อของเดิม ส่งคำถามมาด้วยแต่ไม่ส่งเฉลย",
+ io:"POST /api/sessions { videoId }\n← 200 { sessionId, state:\"CREATED\", positionSec:0,\n  furthestSec:0, lastSeq:0, isReplay:false,\n  quizzes:[{ id, triggerSec:13, prompt, choices:[A..D] }] }\n  (ไม่มี correctChoice)",
+ be:"resume-policy.ts:\n- ยังไม่เคยได้แต้ม → ต่อ session ล่าสุด / สร้างใหม่\n- ได้แต้มแล้ว → session replay (ได้ 0)\n- ถ้า session เดิม PLAYING → เปลี่ยนเป็น PAUSED (event RESUME)"},
+{t:"4. กด Play",a:[[0,1,"คลิก ▶"],[1,3,"POST /events [PLAY]"],[3,4,"state machine"],[4,5,"CAS update + insert event"],[3,1,"{ state:PLAYING, results }",1]],
+ w:"ผู้ใช้กดเล่น client ส่ง PLAY ทันที server เริ่มนับเวลาจริง (lastPlayingAt) ตั้งแต่ตอนนี้",
+ io:"POST /api/sessions/:id/events\n{ events:[{ seq:1, type:\"PLAY\", positionSec:0, clientAt }] }\n← 200 { state:\"PLAYING\", positionSec:0, furthestSec:0,\n  lastSeq:1, results:[{ seq:1, accepted:true }] }",
+ be:"events.controller → zod schema (≤20 events, ≤16KB)\nwatch-session.service → session-state-machine\nrepository: updateMany where version=v (กันเขียนชน)\n→ count==1 ค่อย insert WatchEvent"},
+{t:"5. TICK ระหว่างดู",a:[[0,1,"เล่นไปเรื่อยๆ"],[1,3,"POST /events [TICK×5]"],[3,4,"progress-validator"],[4,5,"furthestSec, bank"],[3,1,"accepted ✓",1]],
+ w:"client เก็บ TICK ทุก 1 วิ รวมส่งทุก 5 วิ server เช็คว่าเดินหน้าไม่เร็วกว่าเวลาจริง",
+ io:"{ events:[ {seq:2,TICK,1.0} … {seq:6,TICK,5.0} ] }\n← 200 { furthestSec:5.0, results:[ all accepted ] }",
+ be:"progress-validator.ts ต่อ event:\n1) credit: playedWallSec += Δเวลาจริง, bank += Δ×1.1 (≤10)\n2) need = pos − furthest ≤ bank → ยอมรับ\n   need > 10 → SEEK_FORWARD (ติดธง)\n   ไม่งั้น → SPEED_EXCEEDED (ปฏิเสธแบบเบา)"},
+{t:"6. ถึงวินาทีที่ 13",a:[[1,3,"POST /events [TICK 13.2]"],[4,4,"gate clamp → QUIZ_PENDING"],[3,1,"{ state:QUIZ_PENDING, currentQuestionId }",1],[1,0,"หยุดวิดีโอ + เปิดคำถาม"]],
+ w:"TICK ข้ามวินาทีที่ 13 server ตัดตำแหน่งให้อยู่ที่ 13 และเปลี่ยนสถานะเป็นรอตอบ client หยุดวิดีโอแล้วเปิด modal ที่กด Esc ปิดไม่ได้",
+ io:"← 200 { state:\"QUIZ_PENDING\", positionSec:13,\n  currentQuestionId:\"q1\" }",be:"gate: ยังไม่ผ่านคำถามนี้ → clamp positionSec = triggerSec\nทุกการเดินหน้าหลังจากนี้ถูกกั้นจนกว่าจะตอบถูก"},
+{t:"7. ตอบผิด",a:[[0,1,"เลือก B"],[1,3,"POST /answer {B}"],[4,5,"insert QuizAttempt"],[3,1,"{ correct:false }",1]],
+ w:"ตอบผิด ได้ข้อความให้ลองใหม่ ตอบกี่ครั้งก็ได้ เฉลยอยู่ที่ server เท่านั้น",
+ io:"POST /api/sessions/:id/answer { questionId:\"q1\", choice:\"B\" }\n← 200 { correct:false, state:\"QUIZ_PENDING\" }",be:"answer.service: เทียบ correctChoice ใน DB\nบันทึก QuizAttempt ทุกครั้ง (admin ดูย้อนหลังได้)"},
+{t:"8. ตอบถูก → เล่นต่อ",a:[[0,1,"เลือก D"],[1,3,"POST /answer {D}"],[4,5,"passedQuestionIds += q1"],[3,1,"{ correct:true, state:PAUSED }",1],[1,3,"POST /events [PLAY] (หลัง 900ms)"]],
+ w:"ตอบถูก server บันทึกว่าผ่านคำถามนี้ client รอ 900ms แล้วเล่นต่อเอง (ส่ง PLAY ใหม่)",
+ io:"POST /answer { choice:\"D\" }\n← 200 { correct:true, state:\"PAUSED\" }\nจากนั้น POST /events [{ PLAY, 13.0 }]",be:"QUIZ_PENDING --ANSWER(ถูก)--> PAUSED\nเปิดทางให้เดินหน้าเกิน 13 ได้"},
+{t:"9. ลองกรอ (โกง)",a:[[0,1,"seekTo(40)"],[1,3,"POST /events [SEEK 40]"],[4,4,"need 27 > 10 → SEEK_FORWARD"],[3,1,"accepted:false, furthest 18",1],[1,0,"seekTo(18) + แจ้งเตือน"]],
+ w:"หน้าเว็บไม่มีแถบกรอ แต่ถ้าโกงผ่าน devtools server ปฏิเสธ ติดธง session แล้ว client เด้งวิดีโอกลับจุดที่ server ยอมรับ",
+ io:"{ events:[{ seq:20, type:\"SEEK\", positionSec:40 }] }\n← 200 { furthestSec:18, results:[{ seq:20, accepted:false,\n  rejectReason:\"SEEK_FORWARD\" }] }",be:"event ถูกเก็บ accepted=false (admin เห็นใน timeline)\nsession.flagged = true\nevent ที่เหลือใน batch → BATCH_ABORTED"},
+{t:"10. สลับแท็บ / refresh",a:[[1,3,"POST /events [TAB_HIDDEN] keepalive"],[0,1,"กด F5"],[1,3,"POST /api/sessions (อีกครั้ง)"],[4,5,"session เดิม → PAUSED"],[3,1,"{ same sessionId, positionSec:22, lastSeq }",1]],
+ w:"ออกจากแท็บ client หยุดวิดีโอและส่ง TAB_HIDDEN refresh แล้วได้ session เดิมกลับมาแบบหยุดอยู่ client เลื่อนไปจุดเดิมแล้วรอผู้ใช้กด Play",
+ io:"POST /api/sessions { videoId }\n← 200 { sessionId: เดิม, state:\"PAUSED\", positionSec:22,\n  lastSeq:34, passedQuestionIds:[\"q1\"] }",be:"resume-policy: PLAYING → PAUSED, lastPlayingAt=null\n→ เวลาที่ปิดแท็บไม่ถูกนับเป็นเวลาดู\nclient: seq ต่อจาก lastSeq (ไม่เริ่ม 1 ใหม่)"},
+{t:"11. ดูจบ",a:[[0,1,"วิดีโอจบ"],[1,3,"POST /events [ENDED 44]"],[4,4,"canEnd?"],[3,1,"{ state:ENDED }",1]],
+ w:"วิดีโอจบ client ส่ง ENDED server เช็ค 3 เงื่อนไขก่อนยอมให้จบ",
+ io:"{ events:[{ type:\"ENDED\", positionSec:44 }] }\n← 200 { state:\"ENDED\" }\nหรือ accepted:false, rejectReason:\"NOT_WATCHED\"",be:"canEnd ต้องครบ:\n- ตอบผ่านทุกคำถาม\n- furthestSec ≥ 44 − 2\n- playedWallSec ≥ 0.9 × 44 = 39.6 วิ"},
+{t:"12. รับแต้ม",a:[[1,3,"POST /claim"],[4,5,"insert PointsLedger (unique)"],[3,1,"{ awarded:true, points:50, totalPoints:50 }",1],[1,0,"🎉 +50 Points"]],
+ w:"client ขอรับแต้มอัตโนมัติ server สร้างแถวแต้ม ถ้ามีแล้วจะไม่จ่ายซ้ำ",
+ io:"POST /api/sessions/:id/claim\n← 200 { awarded:true, points:50, totalPoints:50 }\nถ้ายังไม่ ENDED → 422 NOT_ENDED\nถ้าเคยได้แล้ว → { awarded:false }",be:"reward-policy: session ต้อง ENDED และไม่ใช่ replay\nPointsLedger unique(userId, videoId, reason)\n→ ยิงซ้ำ/หลายแท็บ = P2002 → awarded:false"},
+{t:"ข้อยกเว้น: 409 ชนกัน",a:[[1,3,"POST /events (seq เก่า)"],[4,5,"version ไม่ตรง"],[3,1,"409 SEQ_CONFLICT {lastSeq,state,pos}",1],[1,1,"ทิ้ง seq เก่า, seekTo, ส่ง PLAY/PAUSE ใหม่"]],
+ w:"ถ้าเปิดสองแท็บหรือ request ชนกัน server ตอบ 409 client ปรับตาม server แล้วส่งต่อ ไม่วนลูป",
+ io:"← 409 { error:{ code:\"SEQ_CONFLICT\", lastSeq:40,\n  state:\"PAUSED\", positionSec:25, furthestSec:25 } }",be:"updateMany where version=v → count 0 = มีคนเขียนก่อน\nclient: nextSeq = max+1, ใช้ state ของ server, ส่งซ้ำแค่ PLAY/PAUSE"}
+];
+const svg=document.getElementById("svg"),NS="http://www.w3.org/2000/svg";let i=0;
+const X=k=>80+k*168;
+function el(n,a,t){const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;svg.appendChild(e);return e}
+function draw(){
+ svg.innerHTML='<defs><marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>';
+ const s=S[i],h=70+s.a.length*44;svg.setAttribute("viewBox",`0 0 1000 ${h}`);
+ L.forEach((n,k)=>{el("line",{class:"lane",x1:X(k),x2:X(k),y1:40,y2:h-8});el("rect",{class:"hd",x:X(k)-78,y:6,width:156,height:28,rx:4});el("text",{x:X(k),y:25,"text-anchor":"middle"},n)});
+ s.a.forEach(([f,t,lab,back],j)=>{const y=66+j*44;const bad=/reject|false|409|SEEK_FORWARD/.test(lab);
+  const col=back?"var(--ok)":bad?"var(--bad)":"var(--acc)";
+  el("text",{class:"n",x:8,y:y+4},String(j+1));
+  if(f===t){el("path",{class:"ar",d:`M${X(f)} ${y-6} h40 v14 h-36`,"marker-end":"url(#m)",style:`color:${col};stroke:${col}`});el("text",{class:"lbl",x:X(f)+48,y:y+4},lab)}
+  else{el("line",{class:"ar"+(back?" back":""),x1:X(f),x2:X(t)+(t>f?-4:4),y1:y,y2:y,"marker-end":"url(#m)",style:`color:${col};stroke:${col}`});
+   el("text",{class:"lbl",x:(X(f)+X(t))/2,y:y-7,"text-anchor":"middle"},lab)}});
+ document.getElementById("what").textContent=s.w;document.getElementById("io").textContent=s.io;document.getElementById("be").textContent=s.be;
+ document.getElementById("cnt").textContent=`${i+1} / ${S.length}`;
+ document.querySelectorAll("#nav button").forEach((b,k)=>b.classList.toggle("on",k===i));
+}
+S.forEach((s,k)=>{const b=document.createElement("button");b.textContent=s.t;b.onclick=()=>{i=k;draw()};document.getElementById("nav").appendChild(b)});
+document.getElementById("prev").onclick=()=>{i=Math.max(0,i-1);draw()};
+document.getElementById("next").onclick=()=>{i=Math.min(S.length-1,i+1);draw()};
+document.addEventListener("keydown",e=>{if(e.key==="ArrowRight")document.getElementById("next").click();if(e.key==="ArrowLeft")document.getElementById("prev").click()});
+draw();
+</script>

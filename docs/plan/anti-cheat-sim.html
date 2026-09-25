@@ -1,0 +1,90 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>จำลองกันกรอวิดีโอ</title>
+<style>
+:root{--bg:#f7f8fa;--fg:#1c2230;--mut:#667085;--line:#d5dae3;--box:#fff;--ok:#1f8a4c;--warn:#b7791f;--bad:#c53030;--acc:#2f5bd3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171d;--fg:#e6e9ef;--mut:#98a2b3;--line:#2c323d;--box:#1c2029;--ok:#4cc38a;--warn:#e0a84a;--bad:#f07070;--acc:#7ea0ff;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171d;--fg:#e6e9ef;--mut:#98a2b3;--line:#2c323d;--box:#1c2029;--ok:#4cc38a;--warn:#e0a84a;--bad:#f07070;--acc:#7ea0ff;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:16px}
+.w{max-width:760px;margin:0 auto;display:grid;gap:14px}
+h1{font-size:20px;margin:0}p{margin:0;color:var(--mut)}
+.bar{position:relative;height:26px;background:var(--box);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;left:0}
+#fur{background:color-mix(in srgb,var(--acc) 25%,transparent)}
+#pos{width:3px;background:var(--acc)}
+#gate{width:2px;background:var(--warn)}
+.ticks{display:flex;justify-content:space-between;font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.stats div{background:var(--box);border:1px solid var(--line);border-radius:4px;padding:8px}
+.stats b{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+.stats span{font-size:12px;color:var(--mut)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;padding:8px 12px;border:1px solid var(--line);background:var(--box);color:var(--fg);border-radius:4px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--acc)}
+#log{background:var(--box);border:1px solid var(--line);border-radius:4px;padding:8px;height:230px;overflow:auto;font:13px ui-monospace,monospace;margin:0}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+#state{font-weight:600}
+</style>
+<div class="w">
+<h1>จำลองกฎกันกรอวิดีโอ (server)</h1>
+<p>คลิปยาว 44 วินาที มีคำถามที่วินาทีที่ 13 เวลาในหน้านี้เดินจริง ลองกดปุ่มต่างๆ แล้วดูว่า server ตอบอย่างไร</p>
+<div>
+ <div class="bar"><i id="fur"></i><i id="gate" style="left:29.5%"></i><i id="pos"></i></div>
+ <div class="ticks"><span>0</span><span>13 (คำถาม)</span><span>22</span><span>33</span><span>44</span></div>
+</div>
+<div class="stats">
+ <div><span>สถานะ</span><b id="state">CREATED</b></div>
+ <div><span>ตำแหน่ง</span><b id="sPos">0.0</b></div>
+ <div><span>ไกลสุดที่ server ยอมรับ</span><b id="sFur">0.0</b></div>
+ <div><span>เวลาเล่นจริง</span><b id="sPlay">0.0</b></div>
+ <div><span>โควตา (bank, สูงสุด 10)</span><b id="sBank">3.0</b></div>
+ <div><span>ธงโกง</span><b id="sFlag">ไม่มี</b></div>
+</div>
+<div class="btns">
+ <button id="bPlay">▶ เล่น</button>
+ <button id="bSpeed">เล่นเร็ว 2x</button>
+ <button id="bSeek5">กรอไป +5 วิ</button>
+ <button id="bSeek40">กรอไปวินาทีที่ 40</button>
+ <button id="bAns">ตอบ D (ถูก)</button>
+ <button id="bReset">เริ่มใหม่</button>
+</div>
+<pre id="log"></pre>
+<p>กฎจริง: ทุก event เติมโควตา = เวลาจริงที่ผ่านไป × 1.1 (สูงสุด 10) · เดินหน้าเกินโควตาเล็กน้อย = ปฏิเสธแบบเบา (ครบ 3 ครั้งติดธง) · กระโดดเกิน 10 วิ = ปฏิเสธ + ติดธง · ผ่านวินาทีที่ 13 ไม่ได้ถ้ายังไม่ตอบถูก · จบได้ +50 เมื่อ ตอบผ่าน + ไปถึง ≥42 วิ + เล่นจริง ≥39.6 วิ (90%)</p>
+</div>
+<script>
+const DUR=44,GATE=13,CAP=10;let S,timer=null;
+const $=id=>document.getElementById(id);
+function reset(){S={state:"CREATED",pos:0,fur:0,played:0,bank:3,passed:false,flag:false,soft:0,speed:1,last:null};
+ clearInterval(timer);timer=null;$("log").textContent="";log("สร้าง session ใหม่ (bank เริ่มที่ 3)","ok");draw()}
+function log(t,c){const l=document.createElement("div");l.className=c||"";l.textContent=t;$("log").prepend(l)}
+function credit(){const now=performance.now()/1000;if(S.state==="PLAYING"&&S.last!==null){const d=Math.min(now-S.last,10);S.played+=d;S.bank=Math.min(S.bank+d*1.1,CAP)}S.last=now}
+function tryMove(to,type){ // server-side check for a forward move
+ credit();
+ if(!S.passed&&to>GATE){to=GATE}
+ const need=to-S.fur;
+ if(need<=0){S.pos=to;return true}
+ const slack=type==="SEEK"?1.5:0;
+ if(need<=S.bank+slack){S.bank=Math.max(0,S.bank-need);S.fur=to;S.pos=to;
+  if(!S.passed&&to>=GATE){S.state="QUIZ_PENDING";stop();log("ถึงวินาทีที่ 13 → หยุดวิดีโอ เปิดคำถาม","warn")}
+  if(S.fur>=DUR){end()}return true}
+ if(need>CAP){S.flag=true;log(`${type} ไป ${to.toFixed(1)} → ปฏิเสธ SEEK_FORWARD ติดธง เด้งกลับ ${S.fur.toFixed(1)}`,"bad")}
+ else{S.soft++;if(S.soft>=3)S.flag=true;log(`${type} ไป ${to.toFixed(1)} → ปฏิเสธ SPEED_EXCEEDED (${S.soft}/3) เด้งกลับ ${S.fur.toFixed(1)}`,"warn")}
+ S.pos=S.fur;return false}
+function end(){stop();S.state="ENDED";const ok=S.passed&&S.fur>=DUR-2&&S.played>=0.9*DUR;
+ if(ok)log(`จบ ✓ เล่นจริง ${S.played.toFixed(1)} วิ → +50 แต้ม`,"ok");else log(`ENDED ถูกปฏิเสธ NOT_WATCHED (เล่นจริง ${S.played.toFixed(1)} < 39.6)`,"bad")}
+function stop(){if(S.state==="PLAYING"){credit();S.state="PAUSED"}clearInterval(timer);timer=null}
+function play(speed){if(S.state==="QUIZ_PENDING"){log("ต้องตอบคำถามก่อน","warn");return}if(S.state==="ENDED")return;
+ credit();S.speed=speed;S.state="PLAYING";S.last=performance.now()/1000;clearInterval(timer);
+ log(speed===1?"PLAY":"PLAY ที่ความเร็ว 2x (หน้าเว็บจริงล็อก 1x ไว้)",speed===1?"":"warn");
+ timer=setInterval(()=>{tryMove(Math.min(S.pos+0.5*S.speed,DUR),"TICK");draw()},500)}
+$("bPlay").onclick=()=>{S.state==="PLAYING"?(stop(),log("PAUSE")):play(1);draw()};
+$("bSpeed").onclick=()=>{play(2);draw()};
+$("bSeek5").onclick=()=>{if(S.state==="QUIZ_PENDING"||S.state==="ENDED")return;if(tryMove(Math.min(S.pos+5,DUR),"SEEK"))log(`SEEK +5 → ยอมรับ (ใช้โควตาที่สะสมไว้)`,"ok");draw()};
+$("bSeek40").onclick=()=>{if(S.state==="QUIZ_PENDING"||S.state==="ENDED")return;const before=S.pos;tryMove(40,"SEEK");if(S.pos<40&&S.pos>before&&!S.passed)log("ยังไม่ตอบคำถาม → ถูกกั้นไว้ที่วินาทีที่ 13","warn");draw()};
+$("bAns").onclick=()=>{if(S.state!=="QUIZ_PENDING"){log("ยังไม่มีคำถามเปิดอยู่","warn");return}S.passed=true;S.state="PAUSED";log("ตอบ D ถูก → เล่นต่อ","ok");play(1);draw()};
+$("bReset").onclick=reset;
+function draw(){$("state").textContent=S.state;$("sPos").textContent=S.pos.toFixed(1);$("sFur").textContent=S.fur.toFixed(1);
+ $("sPlay").textContent=S.played.toFixed(1);$("sBank").textContent=S.bank.toFixed(1);$("sFlag").textContent=S.flag?"⚑ ติดธง":"ไม่มี";
+ $("sFlag").className=S.flag?"bad":"";$("bPlay").textContent=S.state==="PLAYING"?"⏸ หยุด":"▶ เล่น";
+ $("fur").style.width=(S.fur/DUR*100)+"%";$("pos").style.left=`calc(${S.pos/DUR*100}% - 1px)`}
+reset();
+</script>

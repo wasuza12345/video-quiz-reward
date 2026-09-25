@@ -410,6 +410,9 @@ the full video; (b) a single forward skip of ≤ 10 s (the bank) is tolerated; c
   Atomic increments; unknown email runs a dummy bcrypt compare. Client IP from Vercel's `x-real-ip` (`ipAddress()`),
   never the leftmost `X-Forwarded-For`. Seed rejects `ADMIN_PASSWORD` shorter than 12 characters.
 - **Origin check:** `Origin` host must equal the request `Host` (works on Vercel preview URLs); applied to all mutating admin calls incl. login.
+- **Known device (P5a fix):** successful login sets `vq_admin_dev` (HMAC adminId.nonce, 90 d); a valid one skips only the per-email cap.
+  **Accepted risk:** an admin on a NEW device can still be blocked by the 50/h per-email attack until the window passes.
+  **Accepted risk (client):** a devtools-level call to `player.seekTo()` can trigger YouTube auto-play outside our UI guard; the server still rejects the jump (SEEK_FORWARD) and pays nothing — covered by `tests/e2e/browser/both-viewports/03-seek-cheat.spec.ts`. No client hardening planned. Same class: repeating pause → devtools seek +1.5 s → PAUSED can ratchet the client guard via `WatchTracker.notePaused` (bounded per event, not cumulative); the server bank refills only while PLAYING, so it ends in SPEED_EXCEEDED/SEEK_FORWARD flags and no reward.
 - **Seed:** first admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` env (never committed); brief video seeded as published + featured.
 - **Create video:** admin pastes URL → server parses `youtubeId`, fetches oEmbed (title, `channelName` = author_name, embeddable);
   `durationSec` filled by the admin preview player's `getDuration()` (admin input trusted), must be > 0.
@@ -462,11 +465,12 @@ the reducer reconciles to it: 409 or rejected progress → adopt server `positio
 7. `/admin/*` placeholder test that P5a must flip to 401/redirect. 8. `Secure` on http://localhost: Chromium OK; WebKit needs https or skip.
 - Event cap = `max(2000, ceil(durationSec × 3))` (long videos must stay finishable); `/answer` counts toward it.
 
-### Backlog (deferred by human 2026-09-24)
+### Backlog (clean-code trim APPROVED by human 2026-09-25 — see clean-code-review-2.md)
 - clean-code structure review @aaa9f37 — verdict "trim lightly": 2 MAJOR (duplicate event type in watch-session.service.ts:12-17;
   draft→404 decided in service.ts:123 and resume-policy.ts:30) + 5 MINOR (user pass-through, Pick<VideoRow>, findOwned,
   VIDEO_STATUSES to shared/constants, INTERNAL_ERROR code). ~36→32 files, ~−60 lines, no behaviour change. Not scheduled.
   Note: the 2 MAJORs are ~7 lines, zero-risk — fold them in only if a later phase touches those files anyway (needs human OK).
+- P7 test gap (reviewer MINOR on 27790d4): add a unit test that pins "seek guard still armed after 1.5 s" (arm → advance fake timers 3 s → spurious PLAYING → swallowed; fails on 98a30a7). Test-only, not scheduled.
 
 ## 11. Decisions (all closed 2026-09-24)
 - **D1 prod DB:** Turso + Prisma libsql adapter (Vercel Marketplace `tursocloud/database`).
