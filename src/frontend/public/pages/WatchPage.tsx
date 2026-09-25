@@ -58,6 +58,15 @@ export function WatchPage({ videoId }: WatchPageProps) {
   });
 
   const claimAttemptedRef = useRef<string | null>(null);
+  // Synchronous double-tap/double-click guard for the quiz modal: two clicks landing on two
+  // DIFFERENT choice buttons close together both fire their real DOM click handlers before React
+  // has a chance to re-render and commit step "submitting" — both onClick closures still read the
+  // SAME pre-dispatch `state` with step "answering", so a state-only check in handleChoice can't
+  // see the first click's own dispatch. This ref is set synchronously, before either dispatch, so
+  // the second handler call (even in the same tick) sees it and bails. Reset by the effect below
+  // whenever the quiz genuinely returns to a fresh "answering" attempt (a new question, or a retry
+  // after a wrong answer).
+  const answerLockRef = useRef(false);
   // ENDED_NOT_WATCHED recovery bookkeeping: a seek-back that didn't move the player far enough
   // can re-fire ENDED almost immediately — ~110 ENDED sends ~80ms apart, softRejectCount 107, in
   // one observed case. A re-ENDED within ENDED_RECOVERY_TIGHT_WINDOW_SEC of the last recovery seek
@@ -380,6 +389,15 @@ export function WatchPage({ videoId }: WatchPageProps) {
     else player.play();
   }, [player, state, autoResuming]);
 
+  // Clears the double-tap lock whenever the quiz genuinely (re-)enters a fresh "answering"
+  // attempt: the question first opens, or a wrong answer's feedback resets step back to
+  // "answering" for a retry. Runs after React commits the step change, which is exactly when a
+  // legitimate next attempt should become clickable again.
+  const quizStepForLock = state.phase.kind === "quiz" ? state.phase.step : null;
+  useEffect(() => {
+    if (quizStepForLock === "answering") answerLockRef.current = false;
+  }, [quizStepForLock]);
+
   const handleChoice = useCallback(
     (choice: string) => {
       // Guard on step "answering" too, not just a question existing — the modal stays open
@@ -387,6 +405,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
       // in that window must be a no-op here, not a second /answer that the server rejects as
       // NOT_AT_QUIZ (which would cancel the pending auto-resume).
       if (state.phase.kind !== "quiz" || state.phase.step !== "answering") return;
+      // answerLockRef guards the narrower race QuizModal's own `disabled` prop can't: two clicks
+      // on two DIFFERENT choice buttons landing close enough together that both DOM click
+      // handlers fire — and both close over the same pre-dispatch `state` — before React
+      // re-renders and disables the buttons. Set synchronously so the second call (even in the
+      // same tick) sees it, unlike the state check above.
+      if (answerLockRef.current) return;
+      answerLockRef.current = true;
       const question = selectCurrentQuestion(state);
       if (!question) return;
       dispatch({ type: "ANSWER_SUBMITTED", choice });

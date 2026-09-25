@@ -7,6 +7,14 @@
 // second tap that reaches the server gets NOT_AT_QUIZ back (the session already moved past the
 // gate), which used to dispatch ANSWER_FAILED -> phase "paused" with a gateFallback toast,
 // cancelling the pending auto-resume entirely. Must fail on ffddb23.
+//
+// A second, narrower race (found by the reviewer's real-browser Playwright spec,
+// 05-double-answer-race.spec.ts, against the FIRST fix above): two clicks landing on two
+// DIFFERENT choice buttons close enough together both fire their real DOM click handlers before
+// React re-renders and commits step "submitting" — both onClick closures still read the SAME
+// pre-dispatch `state` with step "answering", so a state-only check in handleChoice can't see the
+// first click's own dispatch. Fixed with a synchronous ref lock (answerLockRef in WatchPage.tsx),
+// set before either dispatch so the second call — even in the same tick — sees it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -162,5 +170,30 @@ describe("WatchPage: a second tap during the 900ms post-correct-answer window is
 
     const player = FakePlayer.instances[0];
     expect(player.playVideoCallCount, "the auto-resume's own play() must still fire").toBeGreaterThan(0);
+  }, 15_000);
+
+  it("two clicks on different choice buttons in the same tick (before React commits) still send exactly one /answer", async () => {
+    const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
+    act(() => root.render(<WatchPage videoId="v1" />));
+    await flush();
+    await flush();
+    await flush();
+
+    const choiceA = () => Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("choice-a-text"));
+    const choiceB = () => Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("choice-b-text"));
+    expect(choiceA(), "choice A must be present").toBeTruthy();
+    expect(choiceB(), "choice B must be present").toBeTruthy();
+
+    // Both real DOM clicks inside ONE act() call — React processes both native click events
+    // before it re-renders/commits, so both onClick closures run against the same pre-dispatch
+    // `state`, exactly like two clicks landing back-to-back in a real browser before the first
+    // one's re-render lands.
+    act(() => {
+      choiceA()!.click();
+      choiceB()!.click();
+    });
+    await flush();
+
+    expect(postAnswerMock, "only one of the two same-tick clicks may reach sendAnswer").toHaveBeenCalledTimes(1);
   }, 15_000);
 });
