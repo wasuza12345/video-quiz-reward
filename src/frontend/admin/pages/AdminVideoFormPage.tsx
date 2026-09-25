@@ -18,7 +18,7 @@ import { VideoForm, type VideoFormValues } from "../components/VideoForm";
 import { YouTubePreview, type YouTubePreviewHandle } from "../components/YouTubePreview";
 import { videoForm as copy, sessions as sessionsCopy } from "../constants/copy.th";
 import { formatMmSsTenths } from "../lib/time";
-import { parseYoutubeIdClient } from "../lib/youtube";
+import { parseYoutubeId } from "@/shared/youtube-id";
 import type { AdminQuestionDetail, AdminVideoDetail } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
 
@@ -76,7 +76,7 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
       .finally(() => setLoading(false));
   }, [mode, videoId, router]);
 
-  const youtubeId = parseYoutubeIdClient(values.youtubeUrl);
+  const youtubeId = parseYoutubeId(values.youtubeUrl);
   const locked = video?.locked ?? false;
 
   useEffect(() => {

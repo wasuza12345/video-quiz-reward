@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseYoutubeId } from "@/backend/lib/youtube";
+import { parseYoutubeId } from "@/shared/youtube-id";
 
 describe("parseYoutubeId", () => {
   it("accepts a bare 11-char id", () => {

@@ -1,9 +1,11 @@
-// Client-side mirror of backend/lib/youtube.ts's parseYoutubeId — frontend/ never imports
-// backend/ (plan §2), so the admin form re-derives the id locally just to drive the live preview;
-// the server re-parses and is the actual source of truth on save.
+// YouTube video-id parsing (plan §7). Pure and free of Node/DOM imports so both backend/lib and
+// the admin frontend can use it — the frontend derives the id locally just to drive the live
+// preview; the server re-parses this same way and is the actual source of truth on save.
 const YOUTUBE_ID_RE = /^[\w-]{11}$/;
 
-export function parseYoutubeIdClient(input: string): string | null {
+/** Accepts a bare 11-char id, youtu.be/ID, youtube.com/watch?v=ID, or /embed|shorts/ID. Null if
+ * the input isn't recognizably a YouTube video URL/id at all. */
+export function parseYoutubeId(input: string): string | null {
   const trimmed = input.trim();
   if (YOUTUBE_ID_RE.test(trimmed)) return trimmed;
 

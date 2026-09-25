@@ -18,7 +18,6 @@ import type { AdminSessionDetail, AdminSessionEventRow } from "@/shared/contract
 import { AdminApiError, adminApi } from "../services/api";
 
 const SOFT_REJECT_LIMIT = 3;
-const PLAYED_WALL_REQUIRED_RATIO = 0.9;
 
 function buildFlagReason(events: AdminSessionEventRow[]): string {
   const seekForwardCount = events.filter((e) => !e.accepted && e.rejectReason === "SEEK_FORWARD").length;
@@ -100,7 +99,7 @@ export function AdminSessionDetailPage({ sessionId }: { sessionId: string }) {
   }
 
   const { session, events } = detail;
-  const requiredWallSec = PLAYED_WALL_REQUIRED_RATIO * session.durationSec;
+  const requiredWallSec = TOLERANCES.MIN_PLAYED_RATIO * session.durationSec;
   const claimEvent = events.find((e) => e.type === "CLAIM" && e.accepted);
 
   return (
