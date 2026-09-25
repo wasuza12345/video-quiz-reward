@@ -1,8 +1,6 @@
 import type { AuditContext } from "@/backend/common/audit/audit-log";
 import type { PublicChoice, PublicQuestion } from "@/shared/contracts/session";
 
-export type { PublicChoice, PublicQuestion };
-
 export interface AnswerQuestion {
   id: string;
   videoId: string;

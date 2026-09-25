@@ -35,6 +35,7 @@ export interface PublicChoice {
   text: string;
 }
 
+/** Public shape — `correctChoice` never leaves the server (plan §3). */
 export interface PublicQuestion {
   id: string;
   triggerSec: number;

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/backend/lib/prisma";
 import { auditLogEntry } from "@/backend/common/audit/audit-log";
-import type { AdminQuestionRow, CreateQuestionInput, PublicChoice, QuizRepository, UpdateQuestionInput } from "./quiz.interface";
+import type { PublicChoice } from "@/shared/contracts/session";
+import type { AdminQuestionRow, CreateQuestionInput, QuizRepository, UpdateQuestionInput } from "./quiz.interface";
 
 function toAdminRow(q: { id: string; videoId: string; triggerSec: number; prompt: string; correctChoice: string; choices: { label: string; text: string }[] }): AdminQuestionRow {
   // Explicitly projected, not `choices: q.choices` — Prisma's `include` (no `select`) returns the

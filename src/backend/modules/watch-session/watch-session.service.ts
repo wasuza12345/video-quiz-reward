@@ -3,19 +3,11 @@ import { applyAnswer as applyAnswerDomain, applyClientEvents } from "@/backend/d
 import type { ClientEvent, VideoRules } from "@/backend/domain/types";
 import { AppError } from "@/backend/common/errors/app-error";
 import { EVENT_CAPS } from "@/shared/constants/session";
-import type { ClientEventType } from "@/shared/constants/session";
-import type { AnswerResponse, EventsApplyResponse, PublicQuestion, SessionCreateResponse, SessionResponseVideo } from "@/shared/contracts/session";
+import type { AnswerResponse, EventsApplyResponse, PostEventsBody, PublicQuestion, SessionCreateResponse, SessionResponseVideo } from "@/shared/contracts/session";
 import type { QuizRepository } from "../quiz/quiz.interface";
 import type { UserRepository } from "../user/user.interface";
 import type { VideoRepository, VideoRow } from "../video/video.interface";
 import type { EventInput, SessionRow, WatchSessionRepository } from "./watch-session.interface";
-
-export interface EventInputBody {
-  seq: number;
-  type: ClientEventType;
-  positionSec: number;
-  clientAt?: string;
-}
 
 function toVideoRules(video: VideoRow, questions: PublicQuestion[]): VideoRules {
   return { durationSec: video.durationSec, questions: questions.map((q) => ({ id: q.id, triggerSec: q.triggerSec })) };
@@ -45,7 +37,7 @@ function sessionEventCap(durationSec: number): number {
 
 export interface WatchSessionService {
   createOrResume(userId: string, videoId: string): Promise<SessionCreateResponse>;
-  applyEvents(sessionId: string, userId: string, events: EventInputBody[]): Promise<EventsApplyResponse>;
+  applyEvents(sessionId: string, userId: string, events: PostEventsBody["events"]): Promise<EventsApplyResponse>;
   applyAnswer(sessionId: string, userId: string, questionId: string, choice: string): Promise<AnswerResponse>;
 }
 
