@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Skeleton } from "@/frontend/shared/ui/Skeleton";
-import { useAdminYouTubePreview, type AdminYTPlayer } from "../hooks/useAdminYouTubePreview";
+import { useAdminYouTubePreview, YT_PLAYER_STATE, type AdminYTPlayer } from "../hooks/useAdminYouTubePreview";
 import { formatTime, youtubePreview as copy } from "../constants/copy.th";
 import { formatMmSsTenths } from "../lib/time";
 
@@ -24,10 +24,32 @@ export interface YouTubePreviewProps {
 
 /** admin/components/YouTubePreview (spec §5.4): normal controls, live readout, empty/loading/ready/error states. */
 export function YouTubePreview({ youtubeId, onReady, onDuration, onTimeUpdate }: YouTubePreviewProps) {
-  const { containerRef, player, ready, error } = useAdminYouTubePreview(youtubeId);
+  // Set by seekTo() only when the player was UNSTARTED/CUED/ENDED: those states show a black frame
+  // (or the last-rendered one) after a bare seekTo — YouTube doesn't actually decode/paint a frame
+  // at the new position until real playback runs. Muted play-then-pause-on-first-PLAYING coaxes a
+  // real frame out with no audible blip; PLAYING/PAUSED already have a rendered frame, so they keep
+  // the plain seekTo+pause.
+  const unstickingRef = useRef(false);
+  const wasMutedBeforeUnstickRef = useRef(false);
+  // A ref, not the `player` state variable directly: handleStateChange must exist (and be passed
+  // into the hook call below) before `player` itself is declared from that same call's result, and
+  // must keep reading the LATEST instance across re-renders regardless.
+  const playerRef = useRef<AdminYTPlayer | null>(null);
+
+  const handleStateChange = useCallback((state: number) => {
+    if (!unstickingRef.current || state !== YT_PLAYER_STATE.PLAYING) return;
+    unstickingRef.current = false;
+    playerRef.current?.pauseVideo();
+    if (!wasMutedBeforeUnstickRef.current) playerRef.current?.unMute();
+  }, []);
+  const { containerRef, player, ready, error } = useAdminYouTubePreview(youtubeId, handleStateChange);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const reportedDuration = useRef(false);
+
+  useEffect(() => {
+    playerRef.current = player;
+  }, [player]);
 
   useEffect(() => {
     if (!ready || !player) return;
@@ -35,8 +57,17 @@ export function YouTubePreview({ youtubeId, onReady, onDuration, onTimeUpdate }:
       getCurrentTime: () => player.getCurrentTime(),
       getDuration: () => player.getDuration(),
       seekTo: (sec) => {
+        const state = player.getPlayerState();
+        const needsUnstick = state === YT_PLAYER_STATE.UNSTARTED || state === YT_PLAYER_STATE.CUED || state === YT_PLAYER_STATE.ENDED;
+        unstickingRef.current = needsUnstick;
         player.seekTo(sec, true);
-        player.pauseVideo();
+        if (needsUnstick) {
+          wasMutedBeforeUnstickRef.current = player.isMuted();
+          player.mute();
+          player.playVideo();
+        } else {
+          player.pauseVideo();
+        }
       },
       pauseVideo: () => player.pauseVideo(),
     };

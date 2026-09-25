@@ -5,7 +5,14 @@
 import { expect, test } from "@playwright/test";
 import { adminLogin } from "../helpers/admin";
 import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_TEST_VIDEO_YOUTUBE_ID, BRIEF_VIDEO_YOUTUBE_ID } from "../../helpers/env";
-import { exposeYouTubePlayerOnWindow, resetWindowPlayer, seekPlayerTo, waitForPlayerDuration, waitForWindowPlayer } from "../helpers/player";
+import { exposeYouTubePlayerOnWindow, getPlayerCurrentTime, getPlayerState, resetWindowPlayer, seekPlayerTo, waitForPlayerDuration, waitForWindowPlayer } from "../helpers/player";
+
+// Mirrors src/frontend/public/player/youtube-player-types.ts's YT_PLAYER_STATE — kept as raw
+// numbers here (like the rest of this helper module) rather than importing app source into the
+// Playwright test runner.
+const YT_STATE_UNSTARTED = -1;
+const YT_STATE_PAUSED = 2;
+const YT_STATE_CUED = 5;
 import { createSession, findVideoByYoutubeId, postEvents, UserSession } from "../../helpers/api";
 
 test.setTimeout(120_000);
@@ -160,13 +167,26 @@ async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitl
   await test.step('add a question using "ใช้เวลาปัจจุบัน"', async () => {
     await waitForWindowPlayer(page); // the fresh preview-player instance on the edit page
     await waitForPlayerDuration(page);
-    await seekPlayerTo(page, 5, true);
 
     await page.getByRole("button", { name: "+ เพิ่มคำถาม" }).click();
     // exact: true — "คำถาม" is otherwise a substring match of "เวลาที่คำถามขึ้น" (the trigger field).
     await page.getByLabel("คำถาม", { exact: true }).fill("Test question?");
     await page.getByLabel("ข้อความตัวเลือก A").fill("Choice A");
     await page.getByLabel("ข้อความตัวเลือก B").fill("Choice B");
+
+    // Tester audit: "ไปที่เวลานี้" on a preview that has never been played used to leave the video
+    // fully black — seekTo() alone doesn't render a frame on an UNSTARTED/CUED player. Check this
+    // right here, before the seekPlayerTo() below ever plays this same instance. A real player is
+    // already CUED (not UNSTARTED) by the time getDuration() reports real metadata — either is
+    // "never played", both are the black-frame states the fix targets.
+    expect([YT_STATE_UNSTARTED, YT_STATE_CUED], "sanity: the preview must not have been played yet").toContain(await getPlayerState(page));
+    await page.getByLabel("เวลาที่คำถามขึ้น").fill("0:10.0");
+    await page.getByRole("button", { name: "ไปที่เวลานี้" }).click();
+    await expect.poll(() => getPlayerState(page), { timeout: 10_000, message: "the preview must end up genuinely paused, not stuck mid-unstick" }).toBe(YT_STATE_PAUSED);
+    await expect.poll(() => getPlayerCurrentTime(page), { timeout: 5_000 }).toBeGreaterThan(9);
+    await page.getByLabel("เวลาที่คำถามขึ้น").fill("");
+
+    await seekPlayerTo(page, 5, true);
 
     // "ใช้เวลาปัจจุบัน" only enables once the 200ms onTimeUpdate poll observes currentTime > 0
     // after the seek above — not instant, so poll the button's own state rather than a fixed sleep.

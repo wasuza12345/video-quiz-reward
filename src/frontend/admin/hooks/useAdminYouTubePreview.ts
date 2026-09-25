@@ -6,9 +6,14 @@ import { YT_PLAYER_STATE, type YTPlayer } from "@/frontend/public/player/youtube
 
 /** The admin preview needs `getDuration()` too (VideoDetailsForm auto-fills durationSec from it —
  * plan §7: "durationSec filled by the admin preview player's getDuration()"), which the public
- * player interface doesn't need. */
+ * player interface doesn't need. mute/unMute/isMuted back the seek-before-first-play fix in
+ * YouTubePreview.tsx (a muted play-then-pause is how a never-started/ended player is coaxed into
+ * rendering a real frame at the seeked time, with no audible blip). */
 export interface AdminYTPlayer extends YTPlayer {
   getDuration(): number;
+  mute(): void;
+  unMute(): void;
+  isMuted(): boolean;
 }
 
 export interface UseAdminYouTubePreviewResult {
@@ -23,11 +28,19 @@ export interface UseAdminYouTubePreviewResult {
  * `youtubeId` changes (e.g. the admin pastes a different URL). `null`/empty `youtubeId` renders
  * nothing (the "paste a link" empty state is the caller's job, per spec's state list).
  */
-export function useAdminYouTubePreview(youtubeId: string | null): UseAdminYouTubePreviewResult {
+export function useAdminYouTubePreview(youtubeId: string | null, onStateChange?: (state: number) => void): UseAdminYouTubePreviewResult {
   const containerRef = useRef<HTMLDivElement>(null);
   const [player, setPlayer] = useState<AdminYTPlayer | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
+
+  // Latest-callback ref (same pattern as the public useYouTubePlayer's onPlay/onPause/onEnded):
+  // the real YT.Player's events are wired once at construction, so a caller's onStateChange
+  // reaching the current render's closure (not a stale one) needs this indirection.
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+  });
 
   useEffect(() => {
     // No synchronous setState here (react-hooks/set-state-in-effect) — a stale player/ready/error
@@ -50,7 +63,7 @@ export function useAdminYouTubePreview(youtubeId: string | null): UseAdminYouTub
               setPlayer(instance);
               setReady(true);
             },
-            onStateChange: () => {},
+            onStateChange: (e) => onStateChangeRef.current?.(e.data),
             onError: () => onErrorLocal(),
             onPlaybackRateChange: () => {},
           },

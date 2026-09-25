@@ -59,6 +59,10 @@ export function getPlayerCurrentTime(page: Page): Promise<number> {
   return page.evaluate(() => (window as unknown as { __ytPlayer: { getCurrentTime(): number } }).__ytPlayer.getCurrentTime());
 }
 
+export function getPlayerState(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __ytPlayer: { getPlayerState(): number } }).__ytPlayer.getPlayerState());
+}
+
 /** Waits until `window.__ytPlayer.getDuration()` is real — the admin create-video form needs
  * this before Save is clickable (durationSec is polled from the preview player, plan §7). */
 export async function waitForPlayerDuration(page: Page, timeout = 30_000): Promise<void> {
