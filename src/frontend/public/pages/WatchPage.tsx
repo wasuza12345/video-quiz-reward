@@ -512,7 +512,16 @@ export function WatchPage({ videoId }: WatchPageProps) {
         ) : playerError ? (
           <ErrorState title={copy.error.playerFailed.title} body={copy.error.playerFailed.body} action={{ label: copy.error.playerFailed.action, onClick: () => window.location.reload() }} />
         ) : (
-          <div style={replayLoadFailed ? { position: "absolute", width: 1, height: 1, overflow: "hidden" } : undefined}>
+          // inert (not just visually hidden) during replayLoadFailed: the shield button underneath
+          // ("เล่นวิดีโอ") and the iframe itself would otherwise still be reachable by keyboard/AT
+          // while the error screen's own Retry button is what's actually on offer. clipPath+clip
+          // (both, for engine coverage) collapse it to zero rendered pixels rather than relying on
+          // the 1x1 box alone. Nothing here unmounts — the container stays attached.
+          <div
+            inert={replayLoadFailed}
+            aria-hidden={replayLoadFailed || undefined}
+            style={replayLoadFailed ? { position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)", clip: "rect(0 0 0 0)" } : undefined}
+          >
             <VideoPlayer
               containerRef={containerRef}
               showCentrePlay={!isPlaying && state.phase.kind !== "quiz" && state.phase.kind !== "ending" && state.phase.kind !== "claiming"}

@@ -246,6 +246,21 @@ describe("WatchPage: replay's session reload fails, then Retry keeps a live play
     expect(container.querySelector("iframe"), "the player's iframe must stay attached through the error screen, not be unmounted with <VideoPlayer>").toBeTruthy();
     expect(ReplayTestPlayer.instances, "no new player must have been created just from failing to reload").toHaveLength(1);
 
+    // Staying attached isn't enough on its own: a reviewer probe found the hidden player's shield
+    // button ("เล่นวิดีโอ") and iframe still keyboard/AT-focusable underneath the error screen, with
+    // only the visible Retry button meant to be reachable. The wrapper must be genuinely inert, not
+    // just visually hidden.
+    const hiddenWrapper = container.querySelector("iframe")?.closest("div[inert]");
+    expect(hiddenWrapper, "the hidden video player wrapper must be inert while the error screen is showing").toBeTruthy();
+    expect(hiddenWrapper?.getAttribute("aria-hidden"), "the hidden video player wrapper must also be aria-hidden").toBe("true");
+    const shieldButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.getAttribute("aria-label") === copy.controlBar.playAriaLabel || b.getAttribute("aria-label") === copy.controlBar.pauseAriaLabel,
+    );
+    expect(
+      shieldButton?.closest("[inert]"),
+      "the play/pause shield button underneath the error screen must not be independently focusable — it must sit inside the inert wrapper",
+    ).toBe(hiddenWrapper);
+
     const retryButton = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === copy.error.sessionLoadFailed.action);
     expect(retryButton, "the error screen's retry action must be present").toBeTruthy();
 
