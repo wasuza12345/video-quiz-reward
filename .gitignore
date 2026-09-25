@@ -20,9 +20,6 @@ next-env.d.ts
 # generated prisma client
 src/generated/
 
-# agent harness runtime state
-.agent/state/
-
 # playwright
 test-results/
 playwright-report/
