@@ -243,7 +243,10 @@ async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitl
     await expect(page.getByRole("radio", { name: "เฉลย D" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "ใช้เวลาปัจจุบัน" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "ลบคำถาม" })).toBeDisabled();
-    await expect(page.getByLabel("ลิงก์ YouTube")).toHaveAttribute("readonly", "");
+    // tester audit MINOR 2: locked fields must be genuinely disabled, matching the buttons above
+    // (readOnly + aria-disabled used to leave them focusable/tabbable).
+    await expect(page.getByLabel("ลิงก์ YouTube")).toBeDisabled();
+    await expect(page.getByLabel("ความยาว")).toBeDisabled();
   });
 
   // Planner review: Table.tsx and SessionTimeline.tsx's own mobile <div>/<ul> both carried an

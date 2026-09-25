@@ -58,8 +58,7 @@ export function VideoForm({ mode, values, onChange, channelName, durationSec, lo
           id={youtubeUrlId}
           value={values.youtubeUrl}
           onChange={(e) => set({ youtubeUrl: e.target.value })}
-          readOnly={locked}
-          aria-disabled={locked || undefined}
+          disabled={locked}
           aria-describedby={locked ? "video-locked-notice" : undefined}
           style={{ ...fieldBaseStyle, ...(locked ? lockedFieldStyle : {}), borderColor: errors.youtubeUrl ? "var(--danger)" : undefined }}
         />
@@ -77,7 +76,7 @@ export function VideoForm({ mode, values, onChange, channelName, durationSec, lo
         <input
           id={durationSecId}
           readOnly
-          aria-disabled={locked || undefined}
+          disabled={locked}
           value={durationSec !== null ? formatTime(durationSec) : ""}
           style={{ ...fieldBaseStyle, ...lockedFieldStyle }}
         />
