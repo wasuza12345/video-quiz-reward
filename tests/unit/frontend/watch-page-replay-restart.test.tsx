@@ -95,6 +95,7 @@ vi.mock("@/frontend/public/services/api", () => ({
         lastSeq: seq,
         currentQuestionId: gateHit ? QUIZ.id : null,
         results: events.map((e) => ({ seq: e.seq, accepted: true, rejectReason: null })),
+        remainingWatchSec: 0,
       });
     },
   },

@@ -43,15 +43,21 @@ export function WatchPage({ videoId }: WatchPageProps) {
     onError: () => dispatch({ type: "PLAYER_ERROR" }),
   });
 
-  const playedWallSecRef = useRef(0);
   const claimAttemptedRef = useRef<string | null>(null);
-  // Caps ENDED_NOT_WATCHED recovery retries (planner review round 4, BLOCKER #2): a real ENDED
-  // transition after a seek-back that didn't move the player far enough re-fires ENDED almost
-  // immediately, and without a cap, that loop can repeat for as long as the tab stays open (found
-  // in dev.db: ~110 ENDED sends ~80ms apart, softRejectCount 107 — see MAX_ENDED_RECOVERY_ATTEMPTS
-  // below). Reset on every fresh session.
+  // ENDED_NOT_WATCHED recovery bookkeeping (planner review round 4 BLOCKER #2, round 5 MAJOR
+  // follow-up): a seek-back that didn't move the player far enough re-fires ENDED almost
+  // immediately — dev.db: ~110 ENDED sends ~80ms apart, softRejectCount 107. A re-ENDED within
+  // ENDED_RECOVERY_TIGHT_WINDOW_SEC of the last recovery seek is that same tight loop; one after
+  // genuine real playback is a fresh attempt and must not inherit an old, already-resolved tight
+  // streak. After MAX_TIGHT_ENDED_RECOVERY_ATTEMPTS tight re-ends in a row, the client must still
+  // never sit silently in "playing" at ENDED (round 5's MAJOR finding: a short server-measured
+  // playedWall with furthest already near the end can make every recovery attempt land right
+  // back at the end again, even with the corrected seek formula below) — see attemptEndedRecovery.
   const endedRecoveryAttemptsRef = useRef(0);
-  const MAX_ENDED_RECOVERY_ATTEMPTS = 3;
+  const lastEndedRecoverySeekAtRef = useRef<number | null>(null);
+  const endedRecoveryRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ENDED_RECOVERY_TIGHT_WINDOW_SEC = 2;
+  const MAX_TIGHT_ENDED_RECOVERY_ATTEMPTS = 3;
   // Guards the initial mount's /api/me + /api/sessions calls against StrictMode's dev-only
   // double-invoke of effects (review MINOR 2) — keyed on videoId (not just a boolean) so a
   // genuine videoId change still loads. handleReplay/handleRetry call loadSession() directly
@@ -81,16 +87,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
     if (state.status !== "loading") return;
     const t = setTimeout(() => dispatch({ type: "LOADING_SLOW" }), 8000);
     return () => clearTimeout(t);
-  }, [state.status]);
-
-  // --- local wall-clock estimate of PLAYING time, for the ENDED fallback's seek formula only
-  // (the server's own playedWallSec is authoritative and isn't returned to the client) ---
-  useEffect(() => {
-    if (state.status !== "playing") return;
-    const t = setInterval(() => {
-      playedWallSecRef.current += 1;
-    }, 1000);
-    return () => clearInterval(t);
   }, [state.status]);
 
   const trackerApi = useWatchTracker({
@@ -178,12 +174,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
     }
   }, []);
 
-  // Both timeouts above are refs, not tied to any single effect's cleanup — clear them on unmount
-  // so a late timer never calls setState after the component is gone.
+  // These timeouts are all refs, not tied to any single effect's cleanup — clear them on unmount
+  // so a late timer never calls setState (or, for the ENDED recovery retry, touches the player)
+  // after the component is gone.
   useEffect(() => {
     return () => {
       if (suppressAutoplayTimeoutRef.current !== null) clearTimeout(suppressAutoplayTimeoutRef.current);
       if (autoResumingTimeoutRef.current !== null) clearTimeout(autoResumingTimeoutRef.current);
+      if (endedRecoveryRetryTimeoutRef.current !== null) clearTimeout(endedRecoveryRetryTimeoutRef.current);
     };
   }, []);
 
@@ -194,9 +192,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // itself — stale from the just-ended previous session, they'd wrongly keep the just-armed
   // pendingSeekTo-to-0 guard (or a stuck autoResuming) around into the new one. ---
   useEffect(() => {
-    playedWallSecRef.current = 0;
     claimAttemptedRef.current = null;
     endedRecoveryAttemptsRef.current = 0;
+    lastEndedRecoverySeekAtRef.current = null;
+    if (endedRecoveryRetryTimeoutRef.current !== null) {
+      clearTimeout(endedRecoveryRetryTimeoutRef.current);
+      endedRecoveryRetryTimeoutRef.current = null;
+    }
     clearAutoplayGuard();
     clearAutoResumingBackstop();
   }, [state.sessionId, clearAutoplayGuard, clearAutoResumingBackstop]);
@@ -211,6 +213,60 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   // --- player state changes drive both the reducer and the server write (plan §6) ---
   useEffect(() => {
+    // Handles every real ENDED transition, including a recovery's own re-ENDED. Never gives up
+    // silently (planner review round 5, MAJOR): a short server-measured playedWall (credit is
+    // capped at 10s/event — a mobile stall, a slow write, or background throttling can all make
+    // it fall behind) combined with furthest already near the end could make the OLD, client-
+    // estimate-only seek formula land right back at the end, over and over, forever (dev.db:
+    // playedWall 33 vs furthest 43.5 — the client's own deficit came out <= 0 while the server's
+    // real one was still 8s). Fixed two ways: the seek now uses the server's own authoritative
+    // remainingWatchSec instead of the client's local (less reliable) estimate; and a tight-loop
+    // detector only counts a re-ENDED against the cap when it arrives within
+    // ENDED_RECOVERY_TIGHT_WINDOW_SEC of the last recovery seek — one after genuine real
+    // playback is a fresh attempt. Once actually capped, this still never sits silently in
+    // "playing" at ENDED: the recovery dispatch (and its inline notice) always fires, and a
+    // backstop retry is scheduled for after the server's own reported remaining time.
+    const attemptEndedRecovery = (currentTime: number) => {
+      if (endedRecoveryRetryTimeoutRef.current !== null) {
+        clearTimeout(endedRecoveryRetryTimeoutRef.current);
+        endedRecoveryRetryTimeoutRef.current = null;
+      }
+      const now = performance.now();
+      const isTightReEnd =
+        lastEndedRecoverySeekAtRef.current !== null && (now - lastEndedRecoverySeekAtRef.current) / 1000 < ENDED_RECOVERY_TIGHT_WINDOW_SEC;
+      if (!isTightReEnd) endedRecoveryAttemptsRef.current = 0;
+      endedRecoveryAttemptsRef.current += 1;
+
+      dispatch({ type: "VIDEO_ENDED" });
+      void writer.sendImmediate("ENDED", currentTime).then((result) => {
+        if (!result) return;
+        if (result.state === "ENDED") {
+          endedRecoveryAttemptsRef.current = 0;
+          lastEndedRecoverySeekAtRef.current = null;
+          dispatch({ type: "ENDED_ACCEPTED" });
+          return;
+        }
+        const seekTo = Math.max(0, result.furthestSec - result.remainingWatchSec - 2);
+        lastEndedRecoverySeekAtRef.current = performance.now();
+        dispatch({ type: "ENDED_NOT_WATCHED", seekTo });
+
+        if (endedRecoveryAttemptsRef.current >= MAX_TIGHT_ENDED_RECOVERY_ATTEMPTS) {
+          // The seek-back above already resumes playback, which should reach a real ENDED again
+          // on its own — this is a backstop for when it doesn't, waiting out the server's own
+          // reported remaining watch time (not hammering it every ~80ms) before trying once
+          // more. A later real ENDED (tight or not) clears this via the guard at the top.
+          endedRecoveryRetryTimeoutRef.current = setTimeout(
+            () => {
+              endedRecoveryRetryTimeoutRef.current = null;
+              if (!player) return;
+              attemptEndedRecovery(player.getCurrentTime());
+            },
+            (result.remainingWatchSec + 1) * 1000,
+          );
+        }
+      });
+    };
+
     handleStateChangeRef.current = (ytState: number) => {
       if (!player) return;
       const currentTime = player.getCurrentTime();
@@ -250,26 +306,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
       } else if (ytState === YT_PLAYER_STATE.ENDED) {
         clearAutoplayGuard();
         clearAutoResumingBackstop();
-        // A prior NOT_WATCHED recovery's seek-back can itself land close enough to the true end
-        // that the player immediately re-fires ENDED — without a cap this becomes a tight loop
-        // (dev.db: ~110 ENDED sends ~80ms apart, each one also counting as a soft reject — see
-        // BLOCKER #3). Give up silently after a few attempts instead of hammering the server.
-        if (endedRecoveryAttemptsRef.current >= MAX_ENDED_RECOVERY_ATTEMPTS) return;
-        dispatch({ type: "VIDEO_ENDED" });
-        const durationSec = state.video?.durationSec ?? 0;
-        void writer.sendImmediate("ENDED", currentTime).then((result) => {
-          if (!result) return;
-          if (result.state === "ENDED") {
-            endedRecoveryAttemptsRef.current = 0;
-            dispatch({ type: "ENDED_ACCEPTED" });
-          } else {
-            endedRecoveryAttemptsRef.current += 1;
-            // Never seek the recovery forward past the server's own verified furthest — landing
-            // back at/near the end again is exactly what re-triggers the loop above.
-            const seekTo = Math.min(result.furthestSec, Math.max(0, result.furthestSec - (0.9 * durationSec - playedWallSecRef.current)));
-            dispatch({ type: "ENDED_NOT_WATCHED", seekTo });
-          }
-        });
+        attemptEndedRecovery(currentTime);
       }
     };
   });
@@ -309,6 +346,10 @@ export function WatchPage({ videoId }: WatchPageProps) {
     if (state.status !== "quiz_open" || state.feedback?.tone !== "correct") return;
     const t = setTimeout(() => {
       dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT" });
+      // A hidden tab never gets rAF ticks, so playVideo() here would silently start real playback
+      // (and TICKs) the user can't see or stop (planner review round 5, MINOR). Leave status
+      // "paused" (already set above) so the user resumes with an explicit tap on return.
+      if (document.visibilityState === "hidden") return;
       setAutoResuming(true);
       armAutoResumingBackstop();
       // A stale guard from an earlier non-autoplaying seek (e.g. a TICK-overshoot clamp while the

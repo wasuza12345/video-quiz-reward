@@ -143,6 +143,7 @@ export interface EventsApplyBody {
   lastSeq: number;
   currentQuestionId: string | null;
   results: EventResult[];
+  remainingWatchSec: number;
 }
 
 export interface SessionCreateBody {

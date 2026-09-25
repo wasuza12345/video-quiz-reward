@@ -19,6 +19,14 @@ export function canEnd(
   );
 }
 
+/** How much more server-measured PLAYING time canEnd's own playedWallSec check still needs —
+ * not secret, since canEnd itself is public (planner review round 5, MAJOR): lets the client
+ * compute a real recovery seek-back instead of guessing from its own (less reliable, credit-
+ * capped) local estimate. */
+export function remainingWatchSec(s: Pick<SessionSnapshot, "playedWallSec">, video: Pick<VideoRules, "durationSec">): number {
+  return Math.max(0, video.durationSec * MIN_PLAYED_RATIO - s.playedWallSec);
+}
+
 export type ClaimDecision =
   | { ok: false; code: "NOT_ENDED" }
   /** Write the ledger row; a P2002 unique violation on it still means `awarded: false`. */

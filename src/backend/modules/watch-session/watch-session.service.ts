@@ -1,4 +1,5 @@
 import { applyResume, decideResume } from "@/backend/domain/resume-policy";
+import { remainingWatchSec } from "@/backend/domain/reward-policy";
 import { applyAnswer as applyAnswerDomain, applyClientEvents } from "@/backend/domain/session-state-machine";
 import type { ClientEvent, VideoRules } from "@/backend/domain/types";
 import { AppError } from "@/backend/common/errors/app-error";
@@ -103,6 +104,8 @@ export function createWatchSessionService(deps: {
 
     async applyEvents(sessionId, userId, events) {
       const row = await loadOwned(sessionId, userId);
+      const video = await deps.videoRepo.findById(row.videoId);
+      if (!video) throw new AppError("VIDEO_NOT_FOUND", "video not found");
 
       // A prefix of the batch may be a retry of an already-accepted request (network loss on
       // the previous response): seqs are validated strictly increasing, so once we see one
@@ -132,11 +135,9 @@ export function createWatchSessionService(deps: {
           lastSeq: row.lastSeq,
           currentQuestionId: row.currentQuestionId,
           results: echoed,
+          remainingWatchSec: remainingWatchSec(row, video),
         };
       }
-
-      const video = await deps.videoRepo.findById(row.videoId);
-      if (!video) throw new AppError("VIDEO_NOT_FOUND", "video not found");
 
       // The cap applies only to genuinely new events (plan §10) — a retried batch (handled
       // above) never counts against it twice.
@@ -177,6 +178,7 @@ export function createWatchSessionService(deps: {
         lastSeq: newLastSeq,
         currentQuestionId: nextSnapshot.currentQuestionId,
         results,
+        remainingWatchSec: remainingWatchSec(nextSnapshot, video),
       };
     },
 

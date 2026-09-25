@@ -60,13 +60,18 @@ test("forged TICKs: over the bank is soft SPEED_EXCEEDED, far over is hard SEEK_
 
 test("ENDED before 0.9×duration of real play time is rejected (NOT_WATCHED), but never soft-flags the session", async ({ request }) => {
   const user = new UserSession(request);
-  const { sessionId } = await freshCheatSession(user);
+  const { video, sessionId } = await freshCheatSession(user);
 
   const res = await postEvents(user, sessionId, [{ seq: 2, type: "ENDED", positionSec: 0 }]);
   expect(res.status(), await res.text()).toBe(200);
   const body = (await res.json()) as EventsApplyBody;
   expect(body.results[0]).toMatchObject({ accepted: false, rejectReason: "NOT_WATCHED" });
   expect(body.state, "a rejected ENDED must not move the session to ENDED").not.toBe("ENDED");
+
+  // remainingWatchSec (planner review round 5, MAJOR): the client's own ENDED recovery seek needs
+  // this authoritative figure — almost no real time passed since PLAY, so it's still close to the
+  // full 0.9×duration requirement.
+  expect(body.remainingWatchSec, "remainingWatchSec must be reported and reflect the near-full deficit").toBeGreaterThan(0.9 * video.durationSec - 2);
 
   // NOT_WATCHED deliberately never counts as a soft reject (planner review round 4, BLOCKER #3):
   // an honest client-side seek-back/recovery bug could re-fire it many times for one real

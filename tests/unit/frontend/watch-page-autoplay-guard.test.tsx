@@ -60,7 +60,8 @@ vi.mock("@/frontend/public/services/api", () => ({
     // watch.reducer.ts's EVENTS_SYNCED case) resync status back to quiz_open — a mock bug that
     // looks exactly like the swallowed-play defect this test exists to catch, and did in an
     // earlier draft of this test.
-    postEvents: () => Promise.resolve({ state: "PLAYING", positionSec: 10, furthestSec: 10, lastSeq: 3, currentQuestionId: null, results: [] }),
+    postEvents: () =>
+      Promise.resolve({ state: "PLAYING", positionSec: 10, furthestSec: 10, lastSeq: 3, currentQuestionId: null, results: [], remainingWatchSec: 0 }),
     postClaim: () => Promise.resolve({ awarded: false, points: 0, totalPoints: 0 }),
   },
 }));

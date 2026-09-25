@@ -13,6 +13,7 @@ function okResult(resultOver: Partial<EventsApplyResponse> = {}): PostEventsResu
     lastSeq: 0,
     currentQuestionId: null,
     results: [],
+    remainingWatchSec: 0,
     ...resultOver,
   };
   return { ok: true, result };

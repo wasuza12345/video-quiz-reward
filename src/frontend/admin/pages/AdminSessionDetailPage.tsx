@@ -13,21 +13,26 @@ import { SessionStateBadge } from "../components/SessionStateBadge";
 import { SessionTimeline } from "../components/SessionTimeline";
 import { common, formatTime, sessions as copy } from "../constants/copy.th";
 import { shortId } from "../lib/format";
-import { TOLERANCES } from "@/shared/constants/session";
+import { SOFT_REJECT_REASONS, TOLERANCES } from "@/shared/constants/session";
 import type { AdminSessionDetail, AdminSessionEventRow } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
 
-const SOFT_REJECT_LIMIT = 3;
+const SOFT_REJECT_LIMIT = TOLERANCES.SOFT_REJECT_FLAG_AT;
 
-function buildFlagReason(events: AdminSessionEventRow[]): string {
+/** Mirrors softRejectCount's own definition (shared/constants/session.ts): NOT_WATCHED must
+ * never count toward this, or the copy would blame an honest ENDED-recovery retry loop for a
+ * flag it didn't cause (planner review, clean-code MAJOR). */
+export function buildFlagReason(events: AdminSessionEventRow[]): string {
   const seekForwardCount = events.filter((e) => !e.accepted && e.rejectReason === "SEEK_FORWARD").length;
   if (seekForwardCount > 0) {
     return `ถูกแจ้งเตือนเพราะ: ${copy.rejectReason.SEEK_FORWARD} (SEEK_FORWARD) ${seekForwardCount} ครั้ง`;
   }
-  const speedCount = events.filter((e) => !e.accepted && e.rejectReason === "SPEED_EXCEEDED").length;
-  const notWatchedCount = events.filter((e) => !e.accepted && e.rejectReason === "NOT_WATCHED").length;
-  const total = speedCount + notWatchedCount;
-  return `ถูกปฏิเสธสะสม ${total} ครั้ง (${copy.rejectReason.SPEED_EXCEEDED} ${speedCount} · ${copy.rejectReason.NOT_WATCHED} ${notWatchedCount})`;
+  const softRejects = events.filter((e) => !e.accepted && SOFT_REJECT_REASONS.some((reason) => reason === e.rejectReason));
+  const breakdown = SOFT_REJECT_REASONS.map((reason) => {
+    const label = (copy.rejectReason as Record<string, string>)[reason] ?? reason;
+    return `${label} ${softRejects.filter((e) => e.rejectReason === reason).length}`;
+  }).join(" · ");
+  return `ถูกปฏิเสธสะสม ${softRejects.length} ครั้ง (${breakdown})`;
 }
 
 function Fact({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "success" | "warning" | "danger" }) {
