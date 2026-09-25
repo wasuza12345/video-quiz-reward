@@ -29,6 +29,15 @@ export interface WatchPageProps {
   videoId: string;
 }
 
+function VideoTitle({ video }: { video: { title: string; channelName: string } }) {
+  return (
+    <>
+      <h1 style={{ fontSize: "var(--fs-h1)", fontWeight: 700 }}>{video.title}</h1>
+      {video.channelName && <p style={{ margin: "4px 0 0", fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>วิดีโอจาก YouTube: {video.channelName}</p>}
+    </>
+  );
+}
+
 export function WatchPage({ videoId }: WatchPageProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(watchReducer, initialWatchState);
@@ -372,9 +381,9 @@ export function WatchPage({ videoId }: WatchPageProps) {
       const hidden = document.visibilityState === "hidden";
       dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT", hidden });
       // A hidden tab never gets rAF ticks, so playVideo() here would silently start real playback
-      // (and TICKs) the user can't see or stop. Leave status
-      // "paused" (already set above, tagged pausedByTabHidden so the "you left the tab" notice
-      // shows) so the user resumes with an explicit tap on return.
+      // (and TICKs) the user can't see or stop. Leave status "paused" (already set above, tagged
+      // pausedByTabHidden so the "you left the tab" notice shows) so the user resumes with an
+      // explicit tap on return.
       if (hidden) return;
       setAutoResuming(true);
       armAutoResumingBackstop();
@@ -509,8 +518,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
       <main aria-busy={isLoading} style={{ maxWidth: "var(--max-width-watch)", margin: "0 auto", padding: "var(--gutter)", display: "flex", flexDirection: "column", gap: 12 }}>
         {!isLoading && state.video && (
           <div className="watch-title-desktop">
-            <h1 style={{ fontSize: "var(--fs-h1)", fontWeight: 700 }}>{state.video.title}</h1>
-            {state.video.channelName && <p style={{ margin: "4px 0 0", fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>วิดีโอจาก YouTube: {state.video.channelName}</p>}
+            <VideoTitle video={state.video} />
           </div>
         )}
 
@@ -572,8 +580,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
             <QuizProgress quizzes={state.quizzes} passedQuestionIds={state.passedQuestionIds} />
             <div className="watch-title-mobile">
-              <h1 style={{ fontSize: "var(--fs-h1)", fontWeight: 700 }}>{state.video.title}</h1>
-              {state.video.channelName && <p style={{ margin: "4px 0 0", fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>วิดีโอจาก YouTube: {state.video.channelName}</p>}
+              <VideoTitle video={state.video} />
             </div>
             <HowItWorks />
           </>

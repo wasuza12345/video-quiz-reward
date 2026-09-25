@@ -10,6 +10,7 @@ export const clientEventSchema = z.object({
   positionSec: z.number().finite().min(0),
   clientAt: z.string().optional(),
 });
+export type ClientEventBody = z.infer<typeof clientEventSchema>;
 
 export const postEventsBodySchema = z
   .object({ events: z.array(clientEventSchema).min(1).max(EVENT_CAPS.MAX_EVENTS_PER_REQUEST) })

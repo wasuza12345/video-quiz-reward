@@ -28,7 +28,6 @@ export type WatchAction =
   | { type: "VIDEO_ENDED" }
   | { type: "ENDED_ACCEPTED" }
   | { type: "ENDED_NOT_WATCHED"; seekTo: number }
-  | { type: "CLAIM_STARTED" }
   | { type: "CLAIM_ACCEPTED"; result: ClaimResponse }
   | { type: "CLAIM_FAILED" }
   | { type: "CLAIM_NOT_ENDED" }

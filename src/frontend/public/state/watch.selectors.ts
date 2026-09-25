@@ -1,7 +1,7 @@
 // Pure derived values from WatchState — components read these instead of re-deriving copy/flags.
 import { formatTime, watch as copy } from "../constants/copy.th";
+import { nextUnpassedQuestion } from "@/shared/rules/quiz-gate";
 import type { WatchState } from "./watch.reducer";
-import type { PublicQuestion } from "@/shared/contracts/session";
 
 export function selectPlayButtonEnabled(state: WatchState): boolean {
   return state.status === "ready" || state.status === "playing" || state.status === "paused";
@@ -9,17 +9,6 @@ export function selectPlayButtonEnabled(state: WatchState): boolean {
 
 export function selectIsPlaying(state: WatchState): boolean {
   return state.status === "playing";
-}
-
-/** The earliest unpassed question, or null when all are passed — mirrors backend/domain
- * nextUnpassedQuestion (plan §6: the client uses the same ≥ triggerSec comparison as the server). */
-export function nextUnpassedQuestion(quizzes: PublicQuestion[], passedQuestionIds: string[]): PublicQuestion | null {
-  let next: PublicQuestion | null = null;
-  for (const q of quizzes) {
-    if (passedQuestionIds.includes(q.id)) continue;
-    if (!next || q.triggerSec < next.triggerSec) next = q;
-  }
-  return next;
 }
 
 export function selectNextQuestion(state: WatchState) {
@@ -54,8 +43,4 @@ export function selectStatusLineCopy(state: WatchState): string {
     default:
       return "";
   }
-}
-
-export function selectAriaBusy(state: WatchState): boolean {
-  return state.status === "loading";
 }

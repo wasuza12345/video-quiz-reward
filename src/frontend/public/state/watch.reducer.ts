@@ -31,7 +31,6 @@ export interface WatchState {
   pointsUnavailable: boolean;
 
   sessionId: string | null;
-  serverState: SessionState | null;
   positionSec: number;
   furthestSec: number;
   lastSeq: number;
@@ -42,7 +41,6 @@ export interface WatchState {
   video: SessionResponseVideo | null;
   quizzes: PublicQuestion[];
 
-  isNewSession: boolean;
   showResumedBanner: boolean;
   showReplayBanner: boolean;
   pausedByTabHidden: boolean;
@@ -57,7 +55,6 @@ export interface WatchState {
   inlineNotice: "ended_fallback" | "replay_end" | null;
 
   toastRequest: ToastRequest | null;
-  offline: boolean;
   error: WatchError | null;
   pendingSeekTo: number | null;
 }
@@ -69,7 +66,6 @@ export const initialWatchState: WatchState = {
   totalPoints: null,
   pointsUnavailable: false,
   sessionId: null,
-  serverState: null,
   positionSec: 0,
   furthestSec: 0,
   lastSeq: 0,
@@ -79,7 +75,6 @@ export const initialWatchState: WatchState = {
   passedQuestionIds: [],
   video: null,
   quizzes: [],
-  isNewSession: true,
   showResumedBanner: false,
   showReplayBanner: false,
   pausedByTabHidden: false,
@@ -91,7 +86,6 @@ export const initialWatchState: WatchState = {
   claimError: false,
   inlineNotice: null,
   toastRequest: null,
-  offline: false,
   error: null,
   pendingSeekTo: null,
 };
@@ -144,7 +138,6 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
         status,
         reloadingInPlace: false,
         sessionId: s.sessionId,
-        serverState: s.state,
         positionSec: s.positionSec,
         furthestSec: s.furthestSec,
         lastSeq: s.lastSeq,
@@ -154,7 +147,6 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
         passedQuestionIds: s.passedQuestionIds,
         video: s.video,
         quizzes: s.quizzes,
-        isNewSession: s.state === "CREATED" && s.positionSec === 0,
         showResumedBanner: status === "ready" && s.positionSec > 0,
         showReplayBanner: s.isReplay || s.alreadyRewarded,
         quizPhase: status === "quiz_open" ? "ready" : null,
@@ -205,14 +197,13 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
     case "GATE_TICK_RESULT": {
       if (state.status !== "quiz_open" || state.quizPhase !== "syncing") return state; // stale response
       if (action.state === "QUIZ_PENDING") {
-        return { ...state, quizPhase: "ready", serverState: action.state, positionSec: action.positionSec, furthestSec: action.furthestSec };
+        return { ...state, quizPhase: "ready", positionSec: action.positionSec, furthestSec: action.furthestSec };
       }
       // Gate fallback (row 12): the gate TICK didn't land as QUIZ_PENDING — close and resync.
       return {
         ...state,
         status: resyncStatusForServerState(action.state),
         quizPhase: null,
-        serverState: action.state,
         positionSec: action.positionSec,
         furthestSec: action.furthestSec,
         pendingSeekTo: action.positionSec,
@@ -221,7 +212,7 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
     }
 
     case "EVENTS_SYNCED": {
-      const base = { ...state, serverState: action.state, positionSec: action.positionSec, furthestSec: action.furthestSec };
+      const base = { ...state, positionSec: action.positionSec, furthestSec: action.furthestSec };
       // The server can reach QUIZ_PENDING via an ordinary TICK flush too (not only the dedicated
       // gate-hit TICK+PAUSE) — if we're still showing "playing" when that happens, open the quiz.
       if (action.state === "QUIZ_PENDING" && state.status === "playing") {
@@ -242,7 +233,6 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
     case "SEQ_CONFLICT":
       return {
         ...state,
-        serverState: action.state,
         positionSec: action.positionSec,
         furthestSec: action.furthestSec,
         pendingSeekTo: action.positionSec,
@@ -266,7 +256,6 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
           ...state,
           quizPhase: "ready",
           feedback: { tone: "correct", message: copy.quizModal.correct },
-          serverState: action.result.state,
           currentQuestionId: null,
           passedQuestionIds: state.currentQuestionId ? [...state.passedQuestionIds, state.currentQuestionId] : state.passedQuestionIds,
           wrongChoiceLabels: [],
@@ -299,7 +288,7 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
       return { ...state, status: "ended" };
 
     case "ENDED_ACCEPTED":
-      return { ...state, status: "claiming", serverState: "ENDED", claimError: false, inlineNotice: null };
+      return { ...state, status: "claiming", claimError: false, inlineNotice: null };
 
     case "ENDED_NOT_WATCHED":
       return {
@@ -308,9 +297,6 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
         pendingSeekTo: action.seekTo,
         inlineNotice: "ended_fallback",
       };
-
-    case "CLAIM_STARTED":
-      return { ...state, claimError: false };
 
     case "CLAIM_ACCEPTED":
       return {
@@ -337,11 +323,10 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
       return state;
 
     case "OFFLINE":
-      return { ...state, offline: true, toastRequest: requestToast("offline", copy.toast.offline) };
+      return { ...state, toastRequest: requestToast("offline", copy.toast.offline) };
 
-    case "ONLINE":
-      return { ...state, offline: false };
-
+    // ONLINE carries no reducer-owned state — WatchPage dispatches it purely to trigger its own
+    // dismissSticky() side effect.
     default:
       return state;
   }

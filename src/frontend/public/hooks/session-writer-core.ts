@@ -1,14 +1,9 @@
 // The write queue + seq bookkeeping + 409 recovery from plan §4.2, as a plain class with no React
 // or fetch dependency — so it can be unit-tested directly (renders/effects live in useSessionWriter).
 import { EVENT_CAPS } from "@/shared/constants/session";
-import type { ClientEventType, EventsApplyResponse, SessionState } from "@/shared/contracts/session";
+import type { ClientEventBody, ClientEventType, EventsApplyResponse, SessionState } from "@/shared/contracts/session";
 
-export interface QueuedEvent {
-  seq: number;
-  type: ClientEventType;
-  positionSec: number;
-  clientAt?: string;
-}
+export type QueuedEvent = ClientEventBody;
 
 export interface SeqConflictInfo {
   lastSeq: number;

@@ -10,7 +10,7 @@
 // honest viewer hit the guard every ~1.5s, forever. `reconcile()` is the only thing that ever
 // lowers this class's high-water mark; call it on a corrective server response (rejection,
 // conflict, gate fallback, ended fallback) — a normal accepted sync never should.
-import { nextUnpassedQuestion } from "../state/watch.selectors";
+import { nextUnpassedQuestion } from "@/shared/rules/quiz-gate";
 import type { PublicQuestion } from "@/shared/contracts/session";
 
 /** How far past the high-water mark a single frame may advance it before it's just "not yet trusted". */

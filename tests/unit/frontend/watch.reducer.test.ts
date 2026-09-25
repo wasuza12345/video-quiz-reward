@@ -28,17 +28,15 @@ function run(actions: WatchAction[], start: WatchState = initialWatchState): Wat
 }
 
 describe("SESSION_LOADED — derives the starting status from server state (spec §4.4 rows 2-5)", () => {
-  it("row 2: CREATED, positionSec 0 → ready, isNewSession, no resumed banner", () => {
+  it("row 2: CREATED, positionSec 0 → ready, no resumed banner", () => {
     const s = run([{ type: "SESSION_LOADED", session: session() }]);
     expect(s.status).toBe("ready");
-    expect(s.isNewSession).toBe(true);
     expect(s.showResumedBanner).toBe(false);
   });
 
   it("row 3: PAUSED with positionSec > 0 → ready, resumed banner shown", () => {
     const s = run([{ type: "SESSION_LOADED", session: session({ state: "PAUSED", positionSec: 20, furthestSec: 20 }) }]);
     expect(s.status).toBe("ready");
-    expect(s.isNewSession).toBe(false);
     expect(s.showResumedBanner).toBe(true);
   });
 
@@ -163,14 +161,6 @@ describe("EVENTS_SYNCED — every accepted events response is dispatched", () =>
     const s = watchReducer(syncing, { type: "EVENTS_SYNCED", state: "QUIZ_PENDING", positionSec: 13, furthestSec: 13, currentQuestionId: "q1" });
     expect(s.status).toBe("quiz_open");
     expect(s.quizPhase).toBe("syncing"); // untouched — GATE_TICK_RESULT owns that transition, not EVENTS_SYNCED
-  });
-});
-
-describe("CLAIM_STARTED", () => {
-  it("clears a prior claimError when a new claim attempt begins", () => {
-    const claimError = { ...initialWatchState, status: "claiming" as const, claimError: true };
-    const s = watchReducer(claimError, { type: "CLAIM_STARTED" });
-    expect(s.claimError).toBe(false);
   });
 });
 
@@ -400,11 +390,8 @@ describe("errors, points, offline", () => {
     expect(f.pointsUnavailable).toBe(true);
   });
 
-  it("OFFLINE / ONLINE toggle and offline requests a sticky toast", () => {
+  it("OFFLINE requests a sticky toast", () => {
     const off = watchReducer(initialWatchState, { type: "OFFLINE" });
-    expect(off.offline).toBe(true);
     expect(off.toastRequest?.message).toBeTruthy();
-    const on = watchReducer(off, { type: "ONLINE" });
-    expect(on.offline).toBe(false);
   });
 });
