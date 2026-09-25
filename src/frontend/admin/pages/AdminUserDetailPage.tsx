@@ -12,17 +12,15 @@ import { CopyIdButton } from "../components/CopyIdButton";
 import { SessionStateBadge } from "../components/SessionStateBadge";
 import { StatTiles, type StatTile } from "../components/StatTiles";
 import { common, formatTime, users as copy, sessions as sessionsCopy } from "../constants/copy.th";
-import { resolveBackHref } from "../lib/backHref";
+import { ADMIN_USERS_PATH, resolveBackHref } from "../lib/backHref";
 import { shortId } from "../lib/format";
 import type { AdminUserDetail, AdminUserLedgerRow, SessionRow } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
 
-const USERS_LIST_PATH = "/admin/users";
-
 export function AdminUserDetailPage({ userId }: { userId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const backHref = resolveBackHref(searchParams.get("from"), USERS_LIST_PATH);
+  const backHref = resolveBackHref(searchParams.get("from"), ADMIN_USERS_PATH);
   const [detail, setDetail] = useState<AdminUserDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);

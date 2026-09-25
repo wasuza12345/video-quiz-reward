@@ -39,4 +39,17 @@ describe("resolveBackHref", () => {
   it("falls back to the plain list route for a bare list path with no query string (not the `?`-prefixed shape from() produces)", () => {
     expect(resolveBackHref("/admin/sessions", "/admin/sessions")).toBe("/admin/sessions");
   });
+
+  // Reviewer: pins the classic startsWith(listPath) bypasses — a future "simplify" that drops the
+  // required `?` (checking listPath as a bare string prefix instead of `${listPath}?`) would wrongly
+  // accept every one of these. Each must still resolve to the plain list path.
+  it.each([
+    ["//evil.com", "protocol-relative — browsers treat // as a scheme-relative absolute URL"],
+    ["/\\evil.com", "backslash — some browsers normalize \\ to / and treat it as protocol-relative too"],
+    ["/admin/sessions@evil.com", "a bare startsWith(listPath) (no required '?') would accept this"],
+    ["/admin/sessionsX?x", "a bare startsWith(listPath) would accept this — listPath is a prefix, not the whole segment"],
+    ["javascript:alert(1)", "not a path at all"],
+  ])("rejects %s (%s)", (from) => {
+    expect(resolveBackHref(from, "/admin/sessions")).toBe("/admin/sessions");
+  });
 });

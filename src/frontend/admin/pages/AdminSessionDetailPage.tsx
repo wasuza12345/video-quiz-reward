@@ -13,13 +13,11 @@ import { PageHeader } from "../components/AdminShell";
 import { SessionStateBadge } from "../components/SessionStateBadge";
 import { SessionTimeline } from "../components/SessionTimeline";
 import { common, formatTime, sessions as copy } from "../constants/copy.th";
-import { resolveBackHref } from "../lib/backHref";
+import { ADMIN_SESSIONS_PATH, resolveBackHref } from "../lib/backHref";
 import { shortId } from "../lib/format";
 import { SOFT_REJECT_REASONS, TOLERANCES } from "@/shared/constants/session";
 import type { AdminSessionDetail, AdminSessionEventRow } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
-
-const SESSIONS_LIST_PATH = "/admin/sessions";
 
 const SOFT_REJECT_LIMIT = TOLERANCES.SOFT_REJECT_FLAG_AT;
 
@@ -53,7 +51,7 @@ export function Fact({ label, value, sub, tone }: { label: string; value: React.
 export function AdminSessionDetailPage({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const backHref = resolveBackHref(searchParams.get("from"), SESSIONS_LIST_PATH);
+  const backHref = resolveBackHref(searchParams.get("from"), ADMIN_SESSIONS_PATH);
   const [detail, setDetail] = useState<AdminSessionDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);

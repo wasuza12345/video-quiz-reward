@@ -1,6 +1,12 @@
 // Lets a detail page's BackLink return to the exact filtered/paginated list view an admin came
 // from (e.g. /admin/sessions?flagged=true&page=2), instead of always resetting to the plain list.
 
+// Single source of truth for these two routes — both the list page (building each row's `from`)
+// and its detail page (resolving where BackLink's plain fallback points) need the exact same
+// string, or a typo'd duplicate silently breaks the from-preservation on one side.
+export const ADMIN_SESSIONS_PATH = "/admin/sessions";
+export const ADMIN_USERS_PATH = "/admin/users";
+
 /** A list page calls this when building a row's link to its own detail page, appending the
  * list's current query string as `from` (only when there is one — an unfiltered first page keeps
  * a plain link). */

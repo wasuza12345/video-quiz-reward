@@ -30,6 +30,10 @@ test("refresh mid-video resumes at the paused position, and the next TICK doesn'
   await page.waitForURL(/\/watch\/(.+)$/);
   const watchUrl = page.url();
 
+  // Reviewer MINOR (feat/back-links): PublicHeader's mobile-only icon and the page's own desktop
+  // BackLink must never both show at once — exactly one visible back control at any viewport.
+  await expect(page.locator(".header-back-link:visible, .watch-back-link a:visible")).toHaveCount(1);
+
   await clickPlayPause(page);
   await page.waitForTimeout(6_500);
   // Pause before reloading — Chromium's Media Engagement Index can let a fresh embed of a video

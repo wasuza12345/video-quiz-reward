@@ -10,7 +10,7 @@ import { PageHeader } from "../components/AdminShell";
 import { CopyIdButton } from "../components/CopyIdButton";
 import { Pagination } from "../components/Pagination";
 import { common, users as copy } from "../constants/copy.th";
-import { withFromParam } from "../lib/backHref";
+import { ADMIN_USERS_PATH, withFromParam } from "../lib/backHref";
 import { shortId } from "../lib/format";
 import type { AdminUserListItem } from "@/shared/contracts/admin";
 import { adminApi } from "../services/api";
@@ -68,7 +68,7 @@ export function AdminUserListPage() {
             emptyBody=""
             mobileCardHeader={(u) => (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <Link href={withFromParam(`/admin/users/${u.id}`, "/admin/users", searchParams)} style={{ fontFamily: "monospace", fontWeight: 700, color: "inherit" }} title={u.id}>
+                <Link href={withFromParam(`/admin/users/${u.id}`, ADMIN_USERS_PATH, searchParams)} style={{ fontFamily: "monospace", fontWeight: 700, color: "inherit" }} title={u.id}>
                   {shortId(u.id)}
                 </Link>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -82,7 +82,7 @@ export function AdminUserListPage() {
               {
                 key: "user",
                 header: copy.columns.user,
-                href: (u) => withFromParam(`/admin/users/${u.id}`, "/admin/users", searchParams),
+                href: (u) => withFromParam(`/admin/users/${u.id}`, ADMIN_USERS_PATH, searchParams),
                 render: (u) => (
                   <span style={{ fontFamily: "monospace", fontSize: "var(--fs-sm)" }} title={u.id}>
                     {shortId(u.id)}
