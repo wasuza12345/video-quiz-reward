@@ -16,6 +16,7 @@ The **server** decides whether a video was really watched — the browser only r
 | [docs/plan/anti-cheat-sim.html](docs/plan/anti-cheat-sim.html) | Interactive simulator of the server's anti-skip rules (bank, quiz gate, end check) |
 | [docs/design/spec.md](docs/design/spec.md) | UI/UX spec: screens, states, copy, responsive rules |
 | [docs/design/reference-engonair.md](docs/design/reference-engonair.md) | Visual reference notes |
+| [docs/plan/clean-code-review-2.md](docs/plan/clean-code-review-2.md) | Code-quality review and the refactor plan it drives |
 
 ## Quick start (local)
 
@@ -37,7 +38,7 @@ src/
   proxy.ts             anonymous signed cookie (vq_uid), admin guard
   backend/
     domain/            pure rules: session state machine, progress validator, resume + reward policy
-    modules/<name>/    controller → service → repository (+ schema, interfaces) per feature
+    modules/<name>/    controller → service → repository (+ interface) per feature; request schemas (zod) in shared/contracts
     common/            auth, errors, http, validation, audit
   frontend/
     public/            viewer: pages, hooks (YouTube player, watch tracker, session writer), reducer state
@@ -45,7 +46,7 @@ src/
     shared/ui/         shared components
   shared/              constants + contracts used by both sides
 prisma/                schema, migrations, seed
-tests/unit · tests/e2e API + browser (Playwright)
+tests/unit · tests/api (Vitest)   tests/e2e API + browser (Playwright)
 ```
 
 ## Anti-cheat — how "watched to the end" is decided
@@ -54,12 +55,12 @@ The server keeps a timeline (`WatchEvent`) and a state machine per session:
 `CREATED → PLAYING ⇄ PAUSED → QUIZ_PENDING → … → ENDED`.
 
 1. **Server clock only.** Real watch time (`playedWallSec`) is measured from the server's own arrival times while the session is PLAYING (≤10 s credited per event). The client's timestamps are never trusted.
-2. **Progress bank.** Forward progress is allowed only up to a bank that refills at 1.1× real time (starts at 3 s, max 10 s). A small overrun is rejected softly (`SPEED_EXCEEDED`); a jump > 10 s is `SEEK_FORWARD` and flags the session. Rejected events snap the player back.
+2. **Progress bank.** Forward progress is allowed only up to a bank that refills at 1.1× real time (starts at 3 s, max 10 s). A small overrun is rejected softly (`SPEED_EXCEEDED`, 3 of them flag the session); a jump > 10 s is `SEEK_FORWARD` and flags it at once. An explicit SEEK may go at most `furthestSec + 1.5 s`. Rejected events snap the player back. (`src/backend/domain/progress-validator.ts`, `session-state-machine.ts`)
 3. **Quiz gate.** Position can't pass a question's trigger (0:13) until it is answered correctly on the server; the correct answer never leaves the server.
 4. **End check.** `ENDED` is accepted only if every question is passed, the furthest point is within 2 s of the end, and real watch time ≥ 90 % of the video length.
 5. **Exactly-once reward.** `PointsLedger` is unique per (user, video, reason); replays earn 0. Points are stored server-side, so they survive refresh.
 
-The UI also hides the seek bar, disables keyboard shortcuts and locks the playback rate — but those are convenience only; the rules above hold even against a modified client.
+The client adds a first line of defence: no seek bar, keyboard shortcuts disabled, playback rate locked to 1×, a click shield over the iframe, and a per-frame seek guard that snaps any jump past the watched point straight back (`src/frontend/public/hooks/watch-tracker-core.ts`). Those are convenience only — the server rules above hold even against a modified client.
 
 ## API
 
@@ -79,12 +80,13 @@ Request/response shapes and error codes: [plan.md §4](docs/plan/plan.md).
 
 ```bash
 npm run lint && npm run typecheck
-npm test                      # unit (Vitest)
+npm run db:migrate            # the API tests need the local SQLite DB
+npm test                      # unit + API integration (Vitest, local SQLite)
 npm run test:e2e              # API + browser E2E (Playwright, isolated ./e2e.db)
 ```
 
-CI runs lint, typecheck, unit tests and build on every push. Tests never touch Turso.
+CI (`.github/workflows/ci.yml`) runs on every push: lint → typecheck → `prisma validate` → migrate → seed twice (idempotency) → unit + API tests → build, on a throwaway SQLite file. Playwright E2E runs locally, not in CI. Tests never touch Turso.
 
 ## Deploy (Vercel)
 
-Env vars: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` (from the Turso Marketplace integration), `ADMIN_SESSION_SECRET`, `USER_COOKIE_SECRET`. Migrations: `scripts/db-deploy.sh`.
+Env vars: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` (from the Turso Marketplace integration), `ADMIN_SESSION_SECRET`, `USER_COOKIE_SECRET`; for seeding the first admin also `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Migrations: `scripts/db-deploy.sh` (run locally only with `ALLOW_TURSO=1`).

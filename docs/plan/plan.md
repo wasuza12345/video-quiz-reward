@@ -1,6 +1,6 @@
 # Plan — Mini Interactive Video Quiz & Reward
 
-Status: v5.2 (planner, 2026-09-24) — in build (P0–P2 done). Human decisions so far:
+Status: v5.2 (planner, updated 2026-09-25) — built through P7 (main), human local check in progress; P8 deploy pending. Human decisions so far:
 structure = Option A · DB = SQLite + Prisma · server timeline + state machine · backoffice ·
 D4 = admin table + bcrypt + signed cookie · D5 = `/` list (featured brief video) → `/watch/[videoId]` ·
 APP_NAME = "ดูคลิป รับแต้ม" · design ref = engonair.com, font LINE Seed Sans TH (OFL 1.1, self-host), **no EngOnAir logo**, copy voice = ครูหวาน ("ค่ะ/นะคะ").
@@ -57,14 +57,14 @@ video-quiz-reward/
 │  ├─ frontend/
 │  │  ├─ public/
 │  │  │  ├─ pages/       VideoListPage.tsx · WatchPage.tsx
-│  │  │  ├─ components/  FeaturedVideoCard · VideoCard · VideoPlayer · QuizModal · RewardBanner · PointsBadge
-│  │  │  ├─ hooks/       useYouTubePlayer · useWatchTracker · useSessionWriter (seq + single in-flight queue)
+│  │  │  ├─ components/  FeaturedVideoCard · VideoCard · VideoPlayer · QuizModal · RewardBanner · PointsBadge · ControlBar + LiveControlBar · WatchProgress
+│  │  │  ├─ hooks/       useYouTubePlayer · useWatchTracker + watch-tracker-core · useSessionWriter + session-writer-core (seq + single in-flight queue) · usePlayerProgress
 │  │  │  ├─ state/       watch.reducer.ts · watch.actions.ts · watch.selectors.ts
 │  │  │  └─ services/ · types/ · constants/
 │  │  ├─ admin/          pages/ · components/ (VideoForm · YouTubePreview · QuizEditor · SessionTimeline · StatTiles) · services/
 │  │  └─ shared/ui/      Button · Modal · Badge · Table · form fields (EngOnAir tokens)
 │  ├─ backend/
-│  │  ├─ modules/        # each: *.controller · *.service · *.repository · *.interface · *.schema
+│  │  ├─ modules/        # each: *.controller · *.service · *.repository · *.interface (zod request schemas live in shared/contracts)
 │  │  │  ├─ user/  video/  quiz/  watch-session/  reward/  admin-auth/  analytics/
 │  │  ├─ domain/         # pure, no IO — unit tested
 │  │  │  ├─ session-state-machine.ts   # transition table (§5)
@@ -82,7 +82,7 @@ video-quiz-reward/
 │  └─ shared/  contracts/ (zod + types) · constants/ (states, event types, reasons, tolerances)
 ├─ tests/  unit/ · api/ · e2e/ (public mobile+desktop, admin desktop)
 ├─ docs/   plan/ · design/
-├─ .github/workflows/ci.yml           # lint · typecheck · prisma validate · unit · api · e2e
+├─ .github/workflows/ci.yml           # lint · typecheck · prisma validate · migrate · seed×2 · unit · api · build (Playwright E2E runs locally, not in CI)
 └─ .env.example
 ```
 
@@ -92,7 +92,7 @@ video-quiz-reward/
 | Proxy | `src/proxy.ts` | issue `vq_uid` on public paths; reject unauthenticated admin requests early | be the only admin check |
 | Route | `app/api/**/route.ts` | one line: delegate to controller | contain logic |
 | Controller | `*.controller.ts` | identity / `requireAdmin()`, body limit, validate schema, call service, shape response | touch Prisma |
-| Schema | `*.schema.ts`, `shared/contracts` | zod input/output | — |
+| Schema | `shared/contracts` | zod input/output | — |
 | Service | `*.service.ts` | business steps; compute in memory, then persist in one batch write | know Request/Response or Prisma |
 | Domain | `backend/domain/*` | pure rules | any IO |
 | Interface | `*.interface.ts` | repository contracts + entity types | — |
@@ -366,7 +366,7 @@ request are rejected with `BATCH_ABORTED` (not flagged, no position change); non
 ## 6. Anti-cheat
 **Client (smooth UX):** playerVars `controls:0, disablekb:1, fs:0, playsinline:1, rel:0, iv_load_policy:3, modestbranding:1`.
 Custom Play/Pause; PLAY/PAUSE events come from `onStateChange` (a tap on the iframe also toggles on mobile).
-`onPlaybackRateChange` → `setPlaybackRate(1)`. rAF loop: `current > furthest + 1.5` → `seekTo(furthest)`.
+`onPlaybackRateChange` → `setPlaybackRate(1)`. rAF loop (`watch-tracker-core.ts`): compares against a LOCAL high-water mark (advances ≤ max(0.25 s, 2×frame time) per frame; a real pause/resume lifts it via `noteSettled`, ≤ 1.5 s); `current > mark + 1.5` → `seekTo(mark)`. Server rejections/409 `reconcile` the mark down.
 **Quiz gate (order matters):** at `current ≥ next triggerSec` the client `pauseVideo()`, opens the modal, and **enqueues a
 TICK at `current` before the PAUSE** (flushed immediately). The server moves to QUIZ_PENDING on that TICK; the PAUSE is
 then a no-op. The answer is sent only after the write response shows `state = QUIZ_PENDING`. If the response state is
@@ -412,7 +412,7 @@ the full video; (b) a single forward skip of ≤ 10 s (the bank) is tolerated; c
 - **Origin check:** `Origin` host must equal the request `Host` (works on Vercel preview URLs); applied to all mutating admin calls incl. login.
 - **Known device (P5a fix):** successful login sets `vq_admin_dev` (HMAC adminId.nonce, 90 d); a valid one skips only the per-email cap.
   **Accepted risk:** an admin on a NEW device can still be blocked by the 50/h per-email attack until the window passes.
-  **Accepted risk (client):** a devtools-level call to `player.seekTo()` can trigger YouTube auto-play outside our UI guard; the server still rejects the jump (SEEK_FORWARD) and pays nothing — covered by `tests/e2e/browser/both-viewports/03-seek-cheat.spec.ts`. No client hardening planned. Same class: repeating pause → devtools seek +1.5 s → PAUSED can ratchet the client guard via `WatchTracker.notePaused` (bounded per event, not cumulative); the server bank refills only while PLAYING, so it ends in SPEED_EXCEEDED/SEEK_FORWARD flags and no reward.
+  **Accepted risk (client):** a devtools-level call to `player.seekTo()` can trigger YouTube auto-play outside our UI guard; the server still rejects the jump (SEEK_FORWARD) and pays nothing — covered by `tests/e2e/browser/both-viewports/03-seek-cheat.spec.ts`. No client hardening planned. Same class: repeating pause → devtools seek +1.5 s → PAUSED can ratchet the client guard via `WatchTracker.noteSettled` (bounded per event, not cumulative); the server bank refills only while PLAYING, so it ends in SPEED_EXCEEDED/SEEK_FORWARD flags and no reward.
 - **Seed:** first admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` env (never committed); brief video seeded as published + featured.
 - **Create video:** admin pastes URL → server parses `youtubeId`, fetches oEmbed (title, `channelName` = author_name, embeddable);
   `durationSec` filled by the admin preview player's `getDuration()` (admin input trusted), must be > 0.
@@ -422,7 +422,7 @@ the full video; (b) a single forward skip of ≤ 10 s (the bank) is tolerated; c
 
 ## 8. Public UI state (`frontend/public/state/watch.reducer.ts`)
 `loading → ready → playing ⇄ paused → quiz_open(q) → (wrong: quiz_open + error, wrong choice disabled) → paused → playing → ended → claiming → rewarded`
-plus `replay` (quizzes shown, no points) and `error`. The server `state` from every write response is the source of truth;
+plus `error`; a replay is the same flow with the `isReplay` flag (quizzes shown, no points), not a separate status. The server `state` from every write response is the source of truth;
 the reducer reconciles to it: 409 or rejected progress → adopt server `positionSec`/`furthestSec` and `seekTo(positionSec)`
 (honest users on a flaky network recover instead of drifting into SEEK_FORWARD). Only `WatchPage` holds the reducer. Copy tone: ครูหวาน ("ค่ะ/นะคะ").
 
@@ -468,7 +468,7 @@ the reducer reconciles to it: 409 or rejected progress → adopt server `positio
 ### Backlog (clean-code trim APPROVED by human 2026-09-25 — see clean-code-review-2.md)
 - clean-code structure review @aaa9f37 — verdict "trim lightly": 2 MAJOR (duplicate event type in watch-session.service.ts:12-17;
   draft→404 decided in service.ts:123 and resume-policy.ts:30) + 5 MINOR (user pass-through, Pick<VideoRow>, findOwned,
-  VIDEO_STATUSES to shared/constants, INTERNAL_ERROR code). ~36→32 files, ~−60 lines, no behaviour change. Not scheduled.
+  VIDEO_STATUSES to shared/constants, INTERNAL_ERROR code). ~36→32 files, ~−60 lines, no behaviour change. Scheduled via clean-code-review-2.md (#2–#9).
   Note: the 2 MAJORs are ~7 lines, zero-risk — fold them in only if a later phase touches those files anyway (needs human OK).
 - P7 test gap (reviewer MINOR on 27790d4): add a unit test that pins "seek guard still armed after 1.5 s" (arm → advance fake timers 3 s → spurious PLAYING → swallowed; fails on 98a30a7). Test-only, not scheduled.
 

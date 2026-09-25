@@ -631,7 +631,7 @@ the edges. Hidden when `total ≤ pageSize`.
 
 ### `src/frontend/public/components/`
 `PublicHeader` · `PointsBadge` · `PointsSummary` · `FeaturedVideoCard` · `VideoCard` · `VideoGrid` · `VideoPlayer`
-(iframe + click shield + centre play) · `ControlBar` · `WatchProgress` (+ quiz markers) · `StatusLine` ·
+(iframe + click shield + centre play) · `ControlBar` (wrapped by `LiveControlBar` + `usePlayerProgress` for ~10 Hz player-time display) · `WatchProgress` (+ quiz markers) · `StatusLine` ·
 `QuizProgress` · `QuizModal` · `ChoiceButton` · `ContextBanner` · `RewardCard` · `HowItWorks`.
 Pages: `VideoListPage` (§3), `WatchPage` (§4, the only reducer owner). Copy strings: `public/constants/copy.th.ts`.
 
