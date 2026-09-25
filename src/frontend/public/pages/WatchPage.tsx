@@ -255,13 +255,23 @@ export function WatchPage({ videoId }: WatchPageProps) {
           // on its own — this is a backstop for when it doesn't, waiting out the server's own
           // reported remaining watch time (not hammering it every ~80ms) before trying once
           // more. A later real ENDED (tight or not) clears this via the guard at the top.
+          //
+          // Floored at ENDED_RECOVERY_TIGHT_WINDOW_SEC + 3 (planner review round 5 follow-up
+          // MINOR (a)): when remainingWatchSec is 0 (e.g. the player genuinely can't move —
+          // furthestSec is what's actually short, not playedWall), the old (remaining + 1)s delay
+          // was only 1s — inside the 2s tight window, so every backstop-triggered retry looked
+          // like the SAME stuck streak, stayed capped, and rescheduled itself again at 1s: a
+          // steady ~1Hz ENDED loop with no backoff, until the server started 429ing it. Flooring
+          // the delay outside the tight window means each backstop retry is always treated as a
+          // fresh attempt, so it never re-triggers itself immediately again.
+          const retryDelaySec = Math.max(result.remainingWatchSec + 1, ENDED_RECOVERY_TIGHT_WINDOW_SEC + 3);
           endedRecoveryRetryTimeoutRef.current = setTimeout(
             () => {
               endedRecoveryRetryTimeoutRef.current = null;
               if (!player) return;
               attemptEndedRecovery(player.getCurrentTime());
             },
-            (result.remainingWatchSec + 1) * 1000,
+            retryDelaySec * 1000,
           );
         }
       });
@@ -274,6 +284,20 @@ export function WatchPage({ videoId }: WatchPageProps) {
         if (suppressAutoplayAfterSeekRef.current) {
           clearAutoplayGuard();
           player.pauseVideo();
+          return;
+        }
+        // Hidden-tab edge (planner review round 5 follow-up MINOR (b)): if the tab was
+        // backgrounded after the quiz auto-resume's own player.playVideo() call but before this
+        // PLAYING confirmation arrived (both real, independently-async postMessage round trips —
+        // nothing orders them), state.status was still "paused"/"quiz_open" the whole time, so
+        // the separate visibilitychange handler's own status==="playing" guard never fired for
+        // it — the real player would otherwise keep playing in the background, unseen and
+        // unreported, until the user comes back. Catch it here instead: never accept a PLAYING
+        // confirmation while hidden.
+        if (document.visibilityState === "hidden") {
+          dispatch({ type: "TAB_HIDDEN" });
+          player.pauseVideo();
+          if (!writer.isInFlight()) void writer.sendImmediate("TAB_HIDDEN", currentTime, undefined, { keepalive: true });
           return;
         }
         setAutoResuming(false);
