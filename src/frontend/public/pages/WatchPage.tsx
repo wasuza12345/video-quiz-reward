@@ -437,7 +437,12 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   const pointsBadge = <PointsBadge totalPoints={state.points.total} unavailable={state.points.unavailable} />;
 
-  if (state.phase.kind === "error") {
+  // A first-load failure (no video/player ever mounted yet — e.g. video not found, or the very
+  // first /api/sessions call failing) still gets the simple full-page error, no <VideoPlayer> at
+  // all. An in-place replay's reload failing (reloadingInPlace) falls through to the main render
+  // instead — see replayLoadFailed below — so <VideoPlayer> stays mounted from the same JSX branch
+  // across the whole rewarded -> loading -> error -> loading -> ready cycle.
+  if (state.phase.kind === "error" && !state.reloadingInPlace) {
     const error = state.phase.error;
     return (
       <>
@@ -478,19 +483,27 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // the seekTo-alone-on-ENDED quirk, was the actual reason an early replay-restart fix still
   // failed in a real browser.
   const isLoading = state.phase.kind === "loading" && !state.reloadingInPlace;
+  // Only reachable when reloadingInPlace is set (see the early return above): an in-place replay's
+  // reload failed. Rendering the normal controls/quiz UI here would act on the stale pre-replay
+  // session, so swap them for <ErrorState> — but <VideoPlayer> below stays on the exact same JSX
+  // branch it's always on (just visually hidden), so its container div is never unmounted and
+  // useYouTubePlayer's player instance (whose effect only reruns on [youtubeId, title], unchanged
+  // for a same-video replay) keeps targeting a live iframe once Retry succeeds.
+  const replayLoadFailed = state.phase.kind === "error";
+  const replayError = state.phase.kind === "error" ? state.phase.error : null;
 
   return (
     <>
       <PublicHeader showBack pointsBadge={pointsBadge} />
       <main aria-busy={isLoading} style={{ maxWidth: "var(--max-width-watch)", margin: "0 auto", padding: "var(--gutter)", display: "flex", flexDirection: "column", gap: 12 }}>
-        {!isLoading && video && (
+        {!isLoading && !replayLoadFailed && video && (
           <div className="watch-title-desktop">
             <VideoTitle video={video} />
           </div>
         )}
 
-        {showResumedBanner && video && <ContextBanner tone="info">{copy.contextBanner.resumed(formatTime(state.session?.positionSec ?? 0))}</ContextBanner>}
-        {state.showReplayBanner && !showResumedBanner && <ContextBanner tone="info">{copy.contextBanner.replayStart}</ContextBanner>}
+        {!replayLoadFailed && showResumedBanner && video && <ContextBanner tone="info">{copy.contextBanner.resumed(formatTime(state.session?.positionSec ?? 0))}</ContextBanner>}
+        {!replayLoadFailed && state.showReplayBanner && !showResumedBanner && <ContextBanner tone="info">{copy.contextBanner.replayStart}</ContextBanner>}
 
         {isLoading ? (
           <div style={{ aspectRatio: "16/9", borderRadius: "var(--radius-media)", overflow: "hidden" }}>
@@ -499,15 +512,26 @@ export function WatchPage({ videoId }: WatchPageProps) {
         ) : playerError ? (
           <ErrorState title={copy.error.playerFailed.title} body={copy.error.playerFailed.body} action={{ label: copy.error.playerFailed.action, onClick: () => window.location.reload() }} />
         ) : (
-          <VideoPlayer
-            containerRef={containerRef}
-            showCentrePlay={!isPlaying && state.phase.kind !== "quiz" && state.phase.kind !== "ending" && state.phase.kind !== "claiming"}
-            onShieldClick={handleToggle}
-            shieldLabel={isPlaying ? copy.controlBar.pauseAriaLabel : copy.controlBar.playAriaLabel}
+          <div style={replayLoadFailed ? { position: "absolute", width: 1, height: 1, overflow: "hidden" } : undefined}>
+            <VideoPlayer
+              containerRef={containerRef}
+              showCentrePlay={!isPlaying && state.phase.kind !== "quiz" && state.phase.kind !== "ending" && state.phase.kind !== "claiming"}
+              onShieldClick={handleToggle}
+              shieldLabel={isPlaying ? copy.controlBar.pauseAriaLabel : copy.controlBar.playAriaLabel}
+            />
+          </div>
+        )}
+
+        {replayLoadFailed && replayError && (
+          <ErrorState
+            title={replayError.title}
+            body={replayError.body}
+            action={{ label: replayError.action, onClick: replayError === WATCH_ERRORS.videoNotFound ? () => router.push("/") : handleRetry }}
+            secondaryAction={replayError.secondaryAction ? { label: replayError.secondaryAction, onClick: () => router.push("/") } : undefined}
           />
         )}
 
-        {!isLoading && video && (
+        {!isLoading && !replayLoadFailed && video && (
           <>
             <LiveControlBar
               player={player}
