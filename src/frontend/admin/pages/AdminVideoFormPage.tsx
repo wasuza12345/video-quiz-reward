@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/frontend/shared/ui/Badge";
+import { BackLink } from "@/frontend/shared/ui/BackLink";
 import { Button } from "@/frontend/shared/ui/Button";
 import { ConfirmDialog } from "@/frontend/shared/ui/ConfirmDialog";
 import { InlineNotice } from "@/frontend/shared/ui/InlineNotice";
@@ -244,6 +245,7 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
 
   return (
     <div>
+      <BackLink href="/admin/videos" label={copy.backLink} />
       <PageHeader
         title={mode === "create" ? copy.newTitle : copy.editTitle}
         action={

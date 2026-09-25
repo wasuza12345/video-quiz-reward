@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/frontend/shared/ui/Badge";
+import { BackLink } from "@/frontend/shared/ui/BackLink";
 import { EmptyState } from "@/frontend/shared/ui/ErrorState";
 import { InlineNotice } from "@/frontend/shared/ui/InlineNotice";
 import { ProgressBar } from "@/frontend/shared/ui/ProgressBar";
@@ -12,10 +13,13 @@ import { PageHeader } from "../components/AdminShell";
 import { SessionStateBadge } from "../components/SessionStateBadge";
 import { SessionTimeline } from "../components/SessionTimeline";
 import { common, formatTime, sessions as copy } from "../constants/copy.th";
+import { resolveBackHref } from "../lib/backHref";
 import { shortId } from "../lib/format";
 import { SOFT_REJECT_REASONS, TOLERANCES } from "@/shared/constants/session";
 import type { AdminSessionDetail, AdminSessionEventRow } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
+
+const SESSIONS_LIST_PATH = "/admin/sessions";
 
 const SOFT_REJECT_LIMIT = TOLERANCES.SOFT_REJECT_FLAG_AT;
 
@@ -48,6 +52,8 @@ export function Fact({ label, value, sub, tone }: { label: string; value: React.
 
 export function AdminSessionDetailPage({ sessionId }: { sessionId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backHref = resolveBackHref(searchParams.get("from"), SESSIONS_LIST_PATH);
   const [detail, setDetail] = useState<AdminSessionDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
@@ -76,9 +82,7 @@ export function AdminSessionDetailPage({ sessionId }: { sessionId: string }) {
       <div>
         <EmptyState title={copy.detail.notFound} body="" />
         <div style={{ textAlign: "center" }}>
-          <Link href="/admin/sessions" style={{ color: "var(--brand-primary)" }}>
-            ← กลับ
-          </Link>
+          <BackLink href={backHref} label={copy.detail.backLink} />
         </div>
       </div>
     );
@@ -109,6 +113,7 @@ export function AdminSessionDetailPage({ sessionId }: { sessionId: string }) {
 
   return (
     <div>
+      <BackLink href={backHref} label={copy.detail.backLink} />
       <PageHeader
         title={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

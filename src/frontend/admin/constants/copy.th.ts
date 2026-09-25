@@ -71,6 +71,7 @@ export const videoForm = {
   newTitle: "วิดีโอ",
   editTitle: "แก้ไขวิดีโอ",
   backAriaLabel: "กลับไปหน้ารายการวิดีโอ",
+  backLink: "← กลับไปรายการคลิป",
   fields: {
     youtubeUrl: { label: "ลิงก์ YouTube", helper: "วางลิงก์ เช่น https://youtu.be/…", error: "ลิงก์ YouTube ไม่ถูกต้อง", duplicateError: "คลิปนี้ถูกเพิ่มไว้แล้วค่ะ" },
     title: { label: "ชื่อคลิป", helperCreate: "เว้นว่างไว้เพื่อใช้ชื่อจาก YouTube" },
@@ -160,7 +161,7 @@ export const users = {
     viewSession: "ดูเซสชัน",
     sessionsTitle: "เซสชัน",
     notFound: "ไม่พบผู้ใช้นี้ค่ะ",
-    back: "กลับ",
+    backLink: "← กลับไปรายชื่อผู้ใช้",
   },
 };
 
@@ -189,6 +190,7 @@ export const sessions = {
   clearFilter: "ล้างตัวกรอง",
   detail: {
     title: (shortId: string) => `เซสชัน ${shortId}`,
+    backLink: "← กลับไปรายการเซสชัน",
     flaggedPill: "ถูกแจ้งเตือน",
     replayTag: "ดูทบทวน",
     facts: {

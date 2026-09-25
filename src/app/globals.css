@@ -239,6 +239,18 @@ dialog.modal-sheet {
   }
 }
 
+/* WatchPage's own BackLink (frontend/public/pages/WatchPage.tsx) — desktop-only, the exact
+ * opposite of .header-back-link above: PublicHeader's mobile back icon already covers ≤600, so
+ * this must not show there and duplicate it. */
+.watch-back-link {
+  display: none;
+}
+@media (min-width: 601px) {
+  .watch-back-link {
+    display: block;
+  }
+}
+
 /* VideoGrid (frontend/public/components/VideoGrid.tsx) — 1 col ≤600, 2 cols 601-1024, 3 cols ≥1025. */
 .video-grid {
   grid-template-columns: 1fr;

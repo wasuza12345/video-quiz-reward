@@ -10,6 +10,7 @@ import { PageHeader } from "../components/AdminShell";
 import { Pagination } from "../components/Pagination";
 import { SessionStateBadge } from "../components/SessionStateBadge";
 import { common, formatTime, sessions as copy } from "../constants/copy.th";
+import { withFromParam } from "../lib/backHref";
 import { shortId } from "../lib/format";
 import type { AdminVideoListItem, SessionRow } from "@/shared/contracts/admin";
 import { adminApi } from "../services/api";
@@ -110,7 +111,7 @@ export function AdminSessionListPage() {
           <Table<SessionRow>
             rows={data.items}
             rowKey={(s) => s.id}
-            rowHref={(s) => `/admin/sessions/${s.id}`}
+            rowHref={(s) => withFromParam(`/admin/sessions/${s.id}`, "/admin/sessions", searchParams)}
             rowTone={(s) => (s.flagged ? "warning" : undefined)}
             emptyTitle={hasFilter ? copy.emptyFilter : copy.empty}
             emptyBody=""

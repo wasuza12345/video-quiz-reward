@@ -12,13 +12,14 @@ import { QuizModal } from "../components/QuizModal";
 import { ContextBanner } from "../components/ContextBanner";
 import { RewardCard } from "../components/RewardCard";
 import { HowItWorks } from "../components/HowItWorks";
-import { formatTime, watch as copy } from "../constants/copy.th";
+import { formatTime, header, watch as copy } from "../constants/copy.th";
 import { api, ApiError } from "../services/api";
 import { initialWatchState, watchMachine, WATCH_ERRORS } from "../state/watch.machine";
 import { selectCurrentQuestion, selectIsPlaying, selectPlayButtonEnabled, selectStatusLineCopy } from "../state/watch.selectors";
 import { useSessionWriter } from "../hooks/useSessionWriter";
 import { useWatchTracker } from "../hooks/useWatchTracker";
 import { useYouTubePlayer, youtubePlayerTitle } from "../hooks/useYouTubePlayer";
+import { BackLink } from "@/frontend/shared/ui/BackLink";
 import { ErrorState } from "@/frontend/shared/ui/ErrorState";
 import { InlineNotice } from "@/frontend/shared/ui/InlineNotice";
 import { Toast } from "@/frontend/shared/ui/Toast";
@@ -461,6 +462,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
     <>
       <PublicHeader showBack pointsBadge={pointsBadge} />
       <main aria-busy={isLoading} style={{ maxWidth: "var(--max-width-watch)", margin: "0 auto", padding: "var(--gutter)", display: "flex", flexDirection: "column", gap: 12 }}>
+        {!isLoading && !replayLoadFailed && video && (
+          // Desktop only — PublicHeader's own back icon (showBack) already covers ≤600, this must
+          // not duplicate it there (spec: exactly one back affordance per viewport).
+          <div className="watch-back-link">
+            <BackLink href="/" label={header.backLink} />
+          </div>
+        )}
+
         {!isLoading && !replayLoadFailed && video && (
           <div className="watch-title-desktop">
             <VideoTitle video={video} />

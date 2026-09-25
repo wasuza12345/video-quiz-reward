@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { BackLink } from "@/frontend/shared/ui/BackLink";
 import { EmptyState } from "@/frontend/shared/ui/ErrorState";
 import { InlineNotice } from "@/frontend/shared/ui/InlineNotice";
 import { Skeleton } from "@/frontend/shared/ui/Skeleton";
@@ -12,12 +12,17 @@ import { CopyIdButton } from "../components/CopyIdButton";
 import { SessionStateBadge } from "../components/SessionStateBadge";
 import { StatTiles, type StatTile } from "../components/StatTiles";
 import { common, formatTime, users as copy, sessions as sessionsCopy } from "../constants/copy.th";
+import { resolveBackHref } from "../lib/backHref";
 import { shortId } from "../lib/format";
 import type { AdminUserDetail, AdminUserLedgerRow, SessionRow } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
 
+const USERS_LIST_PATH = "/admin/users";
+
 export function AdminUserDetailPage({ userId }: { userId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backHref = resolveBackHref(searchParams.get("from"), USERS_LIST_PATH);
   const [detail, setDetail] = useState<AdminUserDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
@@ -46,9 +51,7 @@ export function AdminUserDetailPage({ userId }: { userId: string }) {
       <div>
         <EmptyState title={copy.detail.notFound} body="" />
         <div style={{ textAlign: "center" }}>
-          <Link href="/admin/users" style={{ color: "var(--brand-primary)" }}>
-            ← {copy.detail.back}
-          </Link>
+          <BackLink href={backHref} label={copy.detail.backLink} />
         </div>
       </div>
     );
@@ -83,6 +86,7 @@ export function AdminUserDetailPage({ userId }: { userId: string }) {
 
   return (
     <div>
+      <BackLink href={backHref} label={copy.detail.backLink} />
       <PageHeader
         title={copy.detail.title(shortId(detail.user.id))}
         action={
