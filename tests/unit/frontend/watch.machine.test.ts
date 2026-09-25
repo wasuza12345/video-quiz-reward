@@ -70,6 +70,11 @@ describe("SESSION_LOADED — derives the starting phase from server state (spec 
     const s = run([{ type: "SESSION_LOADED", session: session({ isReplay: true }) }]);
     expect(s.showReplayBanner).toBe(true);
   });
+
+  it("no stuck state: QUIZ_PENDING with a null currentQuestionId (server desync) lands on ready, not a stuck quiz phase with no modal", () => {
+    const s = run([{ type: "SESSION_LOADED", session: session({ state: "QUIZ_PENDING", currentQuestionId: null, positionSec: 13, furthestSec: 13 }) }]);
+    expect(s.phase).toMatchObject({ kind: "ready" });
+  });
 });
 
 describe("play / pause / tab-hidden", () => {
@@ -149,6 +154,11 @@ describe("EVENTS_SYNCED — every accepted events response is dispatched", () =>
     const s = watchMachine(syncing, { type: "EVENTS_SYNCED", state: "QUIZ_PENDING", positionSec: 13, furthestSec: 13, currentQuestionId: "q1" });
     expect(s.phase).toMatchObject({ kind: "quiz", step: "syncing" }); // untouched — GATE_TICK_RESULT owns that transition, not EVENTS_SYNCED
   });
+
+  it("no stuck state: QUIZ_PENDING with a null currentQuestionId stays 'playing' instead of risking a stuck quiz phase with no modal", () => {
+    const s = watchMachine(playing, { type: "EVENTS_SYNCED", state: "QUIZ_PENDING", positionSec: 13, furthestSec: 13, currentQuestionId: null });
+    expect(s.phase).toMatchObject({ kind: "playing" });
+  });
 });
 
 describe("row 13, 11: answering", () => {
@@ -171,6 +181,19 @@ describe("row 13, 11: answering", () => {
     const s = watchMachine(submitting, { type: "ANSWER_ACCEPTED", result: { correct: true, state: "PAUSED" } });
     expect(s.session?.passedQuestionIds).toEqual(["q1"]);
     expect(s.phase).toMatchObject({ kind: "quiz", step: "correct", feedback: { tone: "correct" } });
+  });
+
+  it("correct answer keeps the modal's own question live for the whole 900ms window (spec §4.4 row 13) — the old reducer instead nulled currentQuestionId here, closing the modal outright", () => {
+    const submitting = watchMachine(atQuiz(), { type: "ANSWER_SUBMITTED", choice: "D" });
+    const s = watchMachine(submitting, { type: "ANSWER_ACCEPTED", result: { correct: true, state: "PAUSED" } });
+    expect(s.phase).toMatchObject({ kind: "quiz", questionId: "q1" });
+  });
+
+  it("a second ANSWER_SUBMITTED during step 'correct' is a no-op — the modal must not be answerable again before QUIZ_RESUME_AFTER_CORRECT closes it", () => {
+    const submitting = watchMachine(atQuiz(), { type: "ANSWER_SUBMITTED", choice: "D" });
+    const correct = watchMachine(submitting, { type: "ANSWER_ACCEPTED", result: { correct: true, state: "PAUSED" } });
+    const s = watchMachine(correct, { type: "ANSWER_SUBMITTED", choice: "D" });
+    expect(s).toEqual(correct);
   });
 
   it("QUIZ_RESUME_AFTER_CORRECT closes the modal → paused (row 13)", () => {
@@ -234,6 +257,18 @@ describe("row 14: resync — 409 SEQ_CONFLICT and rejected progress", () => {
     expect(s.phase).toMatchObject({ kind: "playing" });
   });
 
+  it("no stuck state: SEQ_CONFLICT landing on QUIZ_PENDING carries no questionId (the action never has one) — resyncs to paused, not a stuck quiz phase with no modal", () => {
+    const s = watchMachine(playing, { type: "SEQ_CONFLICT", state: "QUIZ_PENDING", positionSec: 13, furthestSec: 13 });
+    expect(s.phase).toMatchObject({ kind: "paused" });
+  });
+
+  it("a SEQ_CONFLICT resync preserves a paused-because-tab-hidden reason instead of resetting it to 'user'", () => {
+    const hiddenPaused = watchMachine(playing, { type: "TAB_HIDDEN" });
+    expect(hiddenPaused.phase).toEqual({ kind: "paused", reason: "tab_hidden" });
+    const s = watchMachine(hiddenPaused, { type: "SEQ_CONFLICT", state: "PAUSED", positionSec: 9, furthestSec: 12 });
+    expect(s.phase).toEqual({ kind: "paused", reason: "tab_hidden" });
+  });
+
   it("rejected progress with a small jump (< 2s) resyncs silently, no toast", () => {
     const s = watchMachine(playing, { type: "PROGRESS_REJECTED", positionSec: 10, furthestSec: 10, jumpSec: 1.5 });
     expect(s.session?.positionSec).toBe(10);
@@ -273,24 +308,37 @@ describe("rows 16-19: ended, claiming, rewarded", () => {
     expect(s.phase).toEqual({ kind: "claiming", failed: false });
   });
 
+  it("the ended_fallback notice survives a pause/resume — PAUSE_CLICKED/PLAY_CLICKED must not clear it, matching main", () => {
+    const ended = watchMachine(playing, { type: "VIDEO_ENDED" });
+    const fallback = watchMachine(ended, { type: "ENDED_NOT_WATCHED", seekTo: 30 });
+    expect(fallback.inlineNotice).toBe("ended_fallback");
+    const paused = watchMachine(fallback, { type: "PAUSE_CLICKED" });
+    expect(paused.inlineNotice, "must survive a pause").toBe("ended_fallback");
+    const resumed = watchMachine(paused, { type: "PLAY_CLICKED" });
+    expect(resumed.inlineNotice, "must survive the resume too").toBe("ended_fallback");
+  });
+
   it("row 17: ENDED_NOT_WATCHED → back to playing (endedFallback), keeps playing, seeks", () => {
     const ended = watchMachine(playing, { type: "VIDEO_ENDED" });
     const s = watchMachine(ended, { type: "ENDED_NOT_WATCHED", seekTo: 30 });
-    expect(s.phase).toEqual({ kind: "playing", endedFallback: true });
+    expect(s.phase).toEqual({ kind: "playing" });
+    expect(s.inlineNotice).toBe("ended_fallback");
     expect(s.seekRequest).toEqual({ toSec: 30, resume: true, freshSession: false });
   });
 
   it("row 19: CLAIM_ACCEPTED awarded → rewarded, RewardCard data set, no replay notice", () => {
     const claiming = watchMachine(watchMachine(playing, { type: "VIDEO_ENDED" }), { type: "ENDED_ACCEPTED" });
     const s = watchMachine(claiming, { type: "CLAIM_ACCEPTED", result: { awarded: true, points: 50, totalPoints: 50 } });
-    expect(s.phase).toEqual({ kind: "rewarded", result: { awarded: true, points: 50, totalPoints: 50 }, replayEnd: false });
+    expect(s.phase).toEqual({ kind: "rewarded", result: { awarded: true, points: 50, totalPoints: 50 } });
+    expect(s.inlineNotice).toBeNull();
     expect(s.points.total).toBe(50);
   });
 
-  it("row 21: CLAIM_ACCEPTED not awarded (replay end) → rewarded phase, replayEnd true", () => {
+  it("row 21: CLAIM_ACCEPTED not awarded (replay end) → rewarded phase, replay_end notice", () => {
     const claiming = watchMachine(watchMachine(playing, { type: "VIDEO_ENDED" }), { type: "ENDED_ACCEPTED" });
     const s = watchMachine(claiming, { type: "CLAIM_ACCEPTED", result: { awarded: false, points: 0, totalPoints: 50 } });
-    expect(s.phase).toMatchObject({ kind: "rewarded", replayEnd: true });
+    expect(s.phase).toMatchObject({ kind: "rewarded" });
+    expect(s.inlineNotice).toBe("replay_end");
   });
 
   it("CLAIM_FAILED sets phase.failed without leaving claiming", () => {
@@ -302,7 +350,8 @@ describe("rows 16-19: ended, claiming, rewarded", () => {
   it("CLAIM_NOT_ENDED (422 race) behaves like the ENDED fallback", () => {
     const claiming = watchMachine(watchMachine(playing, { type: "VIDEO_ENDED" }), { type: "ENDED_ACCEPTED" });
     const s = watchMachine(claiming, { type: "CLAIM_NOT_ENDED" });
-    expect(s.phase).toEqual({ kind: "playing", endedFallback: true });
+    expect(s.phase).toEqual({ kind: "playing" });
+    expect(s.inlineNotice).toBe("ended_fallback");
   });
 });
 
@@ -310,13 +359,25 @@ describe("replay and retry", () => {
   it("REPLAY_REQUESTED goes to loading in place (keeps the player frame)", () => {
     const rewarded = watchMachine(initialWatchState, { type: "CLAIM_ACCEPTED", result: { awarded: true, points: 50, totalPoints: 50 } });
     const s = watchMachine(rewarded, { type: "REPLAY_REQUESTED" });
-    expect(s.phase).toEqual({ kind: "loading", slow: false, reloadingInPlace: true });
+    expect(s.phase).toEqual({ kind: "loading", slow: false });
+    expect(s.reloadingInPlace).toBe(true);
   });
 
   it("RETRY_REQUESTED from error clears the error and reloads", () => {
     const errored = watchMachine(initialWatchState, { type: "SESSION_LOAD_FAILED", reason: "network" });
     const s = watchMachine(errored, { type: "RETRY_REQUESTED" });
-    expect(s.phase).toEqual({ kind: "loading", slow: false, reloadingInPlace: false });
+    expect(s.phase).toEqual({ kind: "loading", slow: false });
+    expect(s.reloadingInPlace).toBe(false);
+  });
+
+  it("a retry after a failed in-app replay keeps reloadingInPlace true, so the skeleton stays suppressed", () => {
+    const rewarded = watchMachine(initialWatchState, { type: "CLAIM_ACCEPTED", result: { awarded: true, points: 50, totalPoints: 50 } });
+    const replaying = watchMachine(rewarded, { type: "REPLAY_REQUESTED" });
+    const errored = watchMachine(replaying, { type: "SESSION_LOAD_FAILED", reason: "network" });
+    expect(errored.reloadingInPlace, "sanity: SESSION_LOAD_FAILED must not clear it either").toBe(true);
+    const s = watchMachine(errored, { type: "RETRY_REQUESTED" });
+    expect(s.phase).toEqual({ kind: "loading", slow: false });
+    expect(s.reloadingInPlace).toBe(true);
   });
 
   it("RETRY_REQUESTED while claiming failed clears it without touching phase.kind", () => {

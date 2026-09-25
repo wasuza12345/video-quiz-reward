@@ -29,7 +29,7 @@ export function selectStatusLineCopy(state: WatchState): string {
     case "ready":
       return phase.resumedAtSec !== null ? copy.statusLine.readyResumed : copy.statusLine.readyNew(state.session?.quizzes.length ?? 0, state.session?.video.rewardPoints ?? 0);
     case "playing": {
-      if (phase.endedFallback) return copy.statusLine.endedFallback;
+      if (state.inlineNotice === "ended_fallback") return copy.statusLine.endedFallback;
       const next = selectNextQuestion(state);
       if (next) return copy.statusLine.playingNextQuiz(formatTime(next.triggerSec));
       if ((state.session?.quizzes.length ?? 0) === 0) return copy.statusLine.playingNoQuizzes;

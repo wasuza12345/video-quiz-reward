@@ -34,7 +34,11 @@ export function QuizModal({ open, question, questionNumber, totalQuestions, phas
   }, [open]);
 
   if (!question) return null;
-  const disabled = phase === "syncing" || phase === "submitting";
+  // Only "answering" accepts a choice. The old reducer nulled currentQuestionId on a correct
+  // answer, closing the modal outright; the machine instead keeps the modal open through the
+  // 900ms "correct" step (matches spec), so a tap must be rejected here too — otherwise a second
+  // tap during that window sends a second /answer, which the server rejects as NOT_AT_QUIZ.
+  const disabled = phase !== "answering";
 
   return (
     <Modal open={open} mode="sheet" dismissible={false} labelledBy="quiz-title" describedBy="quiz-prompt">

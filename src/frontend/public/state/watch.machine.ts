@@ -1,7 +1,25 @@
 // Discriminated-union reducer for /watch/[videoId], replacing the flat WatchState in
 // watch.reducer.ts: invalid combinations (e.g. status "playing" with a quiz-only field set) can't
-// be represented. Same WatchAction inputs and observable outcomes as watch.reducer.ts; consumed
-// through the selectors in watch.selectors.ts.
+// be represented. Same WatchAction inputs as watch.reducer.ts; observable outcomes are the same
+// EXCEPT for the deliberate changes below, consumed through the selectors in watch.selectors.ts:
+//
+//  1. SEQ_CONFLICT landing on QUIZ_PENDING with no questionId (a server/client desync) used to
+//     stick status at "quiz_open" with the modal never rendering (currentQuestionId stayed null)
+//     — now correctly resyncs to "paused" instead. See "no stuck state" in watch.machine.test.ts.
+//  2. SESSION_LOADED with server state QUIZ_PENDING but a null currentQuestionId used to stick the
+//     same way — now lands on "ready" instead.
+//  3. EVENTS_SYNCED reaching QUIZ_PENDING with a null currentQuestionId used to be unreachable
+//     (quizzes can't gate without a question id) but had no defensive check — now explicitly stays
+//     "playing" instead of risking the same stuck modal.
+//  4. Out-of-phase ANSWER_ACCEPTED/ANSWER_FAILED/CLAIM_FAILED (a stale network response arriving
+//     after the user already left that phase) are now no-ops — the old flat reducer had no phase
+//     guard on these and would silently write into fields (quizPhase, claimError, ...) the UI
+//     wasn't showing anymore, a latent desync waiting for the user to re-enter that phase.
+//  5. seekRequest.resume is now decided at reducer/dispatch time (baked into the action) instead
+//     of read from state when WatchPage's seek effect runs. Only matters for actions the reducer
+//     applies as a same-tick batch, where the old effect-time read could see a LATER action in the
+//     batch's outcome that a dispatch-time bake can't — no observed real-world case, but named
+//     here since it's a genuine (if narrow) behavioral difference.
 //
 // Scope note: the plan's Phase union also lists a quiz step "resuming" for the ~900ms
 // auto-resume-after-correct-answer window. That window is still owned by WatchPage's own
@@ -41,10 +59,10 @@ export interface SessionSnapshot {
 }
 
 export type Phase =
-  | { kind: "loading"; slow: boolean; reloadingInPlace: boolean }
+  | { kind: "loading"; slow: boolean }
   | { kind: "error"; error: WatchError }
   | { kind: "ready"; resumedAtSec: number | null }
-  | { kind: "playing"; endedFallback: boolean }
+  | { kind: "playing" }
   | { kind: "paused"; reason: "user" | "tab_hidden" }
   | {
       kind: "quiz";
@@ -56,7 +74,7 @@ export type Phase =
     }
   | { kind: "ending" }
   | { kind: "claiming"; failed: boolean }
-  | { kind: "rewarded"; result: ClaimResponse; replayEnd: boolean };
+  | { kind: "rewarded"; result: ClaimResponse };
 
 export interface WatchState {
   phase: Phase;
@@ -70,15 +88,29 @@ export interface WatchState {
   seekRequest: { toSec: number; resume: boolean; freshSession: boolean } | null;
   toast: ToastRequest | null;
   showReplayBanner: boolean;
+  // Lives outside Phase (unlike a quiz/claiming/rewarded-only field) because it must survive a
+  // pause/resume untouched — matching the old flat WatchState's inlineNotice, which PLAY_CLICKED/
+  // PAUSE_CLICKED never touched. Only ENDED_NOT_WATCHED/CLAIM_NOT_ENDED, ENDED_ACCEPTED,
+  // CLAIM_ACCEPTED and a fresh SESSION_LOADED ever change it.
+  inlineNotice: "ended_fallback" | "replay_end" | null;
+  // Also lives outside the "loading" phase (rather than as a field on it) because it must survive
+  // that phase itself ending in an error — REPLAY_REQUESTED sets it, and if the replay's own
+  // SESSION_LOADED fails, SESSION_LOAD_FAILED moves phase to "error" without clearing it, so a
+  // RETRY_REQUESTED back to "loading" still knows this is an in-place reload and WatchPage's
+  // isLoading check keeps suppressing the skeleton — matching the old flat reducer, where
+  // RETRY_REQUESTED never touched this field either.
+  reloadingInPlace: boolean;
 }
 
 export const initialWatchState: WatchState = {
-  phase: { kind: "loading", slow: false, reloadingInPlace: false },
+  phase: { kind: "loading", slow: false },
   session: null,
   points: { total: null, unavailable: false },
   seekRequest: null,
   toast: null,
   showReplayBanner: false,
+  inlineNotice: null,
+  reloadingInPlace: false,
 };
 
 let toastCounter = 0;
@@ -104,19 +136,23 @@ function initialPhaseForServerState(s: SessionState, positionSec: number, questi
     return { kind: "quiz", questionId, step: "answering", pendingChoice: null, wrongChoices: [], feedback: null };
   }
   if (s === "ENDED") return { kind: "claiming", failed: false };
-  if (s === "PLAYING") return { kind: "playing", endedFallback: false };
+  if (s === "PLAYING") return { kind: "playing" };
   return { kind: "ready", resumedAtSec: positionSec > 0 ? positionSec : null };
 }
 
 /** Mid-session resync (SEQ_CONFLICT, gate fallback): watching has already started, so anything
- * but PLAYING/QUIZ_PENDING/ENDED means the user is paused, not back at the pre-play screen. */
-function resyncPhaseForServerState(s: SessionState, questionId: string | null): Phase {
+ * but PLAYING/QUIZ_PENDING/ENDED means the user is paused, not back at the pre-play screen.
+ * `pausedReason` carries forward whatever reason the CURRENT phase was already paused for (if
+ * any) — matching the old flat reducer, where pausedByTabHidden was a field these actions never
+ * touched at all, so "paused because the tab was hidden" survived a resync untouched instead of
+ * being reset to "user". */
+function resyncPhaseForServerState(s: SessionState, questionId: string | null, pausedReason: "user" | "tab_hidden" = "user"): Phase {
   if (s === "QUIZ_PENDING" && questionId) {
     return { kind: "quiz", questionId, step: "answering", pendingChoice: null, wrongChoices: [], feedback: null };
   }
   if (s === "ENDED") return { kind: "claiming", failed: false };
-  if (s === "PLAYING") return { kind: "playing", endedFallback: false };
-  return { kind: "paused", reason: "user" };
+  if (s === "PLAYING") return { kind: "playing" };
+  return { kind: "paused", reason: pausedReason };
 }
 
 export function watchMachine(state: WatchState, action: WatchAction): WatchState {
@@ -145,6 +181,8 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
           quizzes: s.quizzes,
         },
         showReplayBanner: s.isReplay || s.alreadyRewarded,
+        inlineNotice: null,
+        reloadingInPlace: false,
         // Always seek, even to 0 — an in-app replay reuses the same player instance, still
         // sitting at ENDED, so an explicit seekTo(0) is what unsticks Play.
         seekRequest: { toSec: s.positionSec, resume: phase.kind === "playing", freshSession: true },
@@ -162,7 +200,7 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
 
     case "PLAY_CLICKED":
       if (state.phase.kind !== "ready" && state.phase.kind !== "paused") return state;
-      return { ...state, phase: { kind: "playing", endedFallback: false }, showReplayBanner: false };
+      return { ...state, phase: { kind: "playing" }, showReplayBanner: false };
 
     case "PAUSE_CLICKED":
       if (state.phase.kind !== "playing") return state;
@@ -182,6 +220,8 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
         return { ...withPosition, phase: { ...state.phase, step: "answering" } };
       }
       // Gate fallback (row 12): the gate TICK didn't land as QUIZ_PENDING — close and resync.
+      // Reached only from "quiz" (the guard above), which never carries a paused reason to
+      // preserve, so this always resyncs to "paused" with reason "user" when it lands there.
       return {
         ...withPosition,
         phase: resyncPhaseForServerState(action.state, null),
@@ -218,7 +258,9 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
     case "SEQ_CONFLICT": {
       if (!state.session) return state;
       const session = { ...state.session, positionSec: action.positionSec, furthestSec: action.furthestSec };
-      const phase = state.phase.kind === "quiz" || state.phase.kind === "error" ? state.phase : resyncPhaseForServerState(action.state, null);
+      const pausedReason = state.phase.kind === "paused" ? state.phase.reason : "user";
+      const phase =
+        state.phase.kind === "quiz" || state.phase.kind === "error" ? state.phase : resyncPhaseForServerState(action.state, null, pausedReason);
       return {
         ...state,
         session,
@@ -278,33 +320,40 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
       return { ...state, phase: { kind: "ending" } };
 
     case "ENDED_ACCEPTED":
-      return { ...state, phase: { kind: "claiming", failed: false } };
+      return { ...state, phase: { kind: "claiming", failed: false }, inlineNotice: null };
 
     case "ENDED_NOT_WATCHED":
       return {
         ...state,
-        phase: { kind: "playing", endedFallback: true },
+        phase: { kind: "playing" },
         seekRequest: { toSec: action.seekTo, resume: true, freshSession: false },
+        inlineNotice: "ended_fallback",
       };
 
     case "CLAIM_ACCEPTED":
       return {
         ...state,
-        phase: { kind: "rewarded", result: action.result, replayEnd: !action.result.awarded },
+        phase: { kind: "rewarded", result: action.result },
         points: { ...state.points, total: action.result.totalPoints },
+        inlineNotice: action.result.awarded ? null : "replay_end",
       };
 
     case "CLAIM_FAILED":
       return state.phase.kind === "claiming" ? { ...state, phase: { ...state.phase, failed: true } } : state;
 
     case "CLAIM_NOT_ENDED":
-      return { ...state, phase: { kind: "playing", endedFallback: true } };
+      return { ...state, phase: { kind: "playing" }, inlineNotice: "ended_fallback" };
 
     case "REPLAY_REQUESTED":
-      return { ...state, phase: { kind: "loading", slow: false, reloadingInPlace: true } };
+      return { ...state, phase: { kind: "loading", slow: false }, reloadingInPlace: true };
 
     case "RETRY_REQUESTED":
-      if (state.phase.kind === "error") return { ...state, phase: { kind: "loading", slow: false, reloadingInPlace: false } };
+      // reloadingInPlace is untouched here (spread from state), matching the old flat reducer's
+      // reloadingInPlace field, which RETRY_REQUESTED never touched either: a retry after a
+      // failed in-app replay (REPLAY_REQUESTED set it true, then SESSION_LOAD_FAILED landed on
+      // "error" without clearing it) must not show the loading skeleton the isLoading check in
+      // WatchPage.tsx exists specifically to suppress for an in-place reload.
+      if (state.phase.kind === "error") return { ...state, phase: { kind: "loading", slow: false } };
       if (state.phase.kind === "claiming" && state.phase.failed) return { ...state, phase: { ...state.phase, failed: false } };
       return state;
 

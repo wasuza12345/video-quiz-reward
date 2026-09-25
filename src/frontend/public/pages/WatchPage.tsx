@@ -385,6 +385,11 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   const handleChoice = useCallback(
     (choice: string) => {
+      // Guard on step "answering" too, not just a question existing — the modal stays open
+      // through the 900ms "correct" step (see QuizModal's own disabled check), and a second tap
+      // in that window must be a no-op here, not a second /answer that the server rejects as
+      // NOT_AT_QUIZ (which would cancel the pending auto-resume).
+      if (state.phase.kind !== "quiz" || state.phase.step !== "answering") return;
       const question = selectCurrentQuestion(state);
       if (!question) return;
       dispatch({ type: "ANSWER_SUBMITTED", choice });
@@ -432,8 +437,8 @@ export function WatchPage({ videoId }: WatchPageProps) {
   const questionNumber = currentQuestion ? quizzes.findIndex((q) => q.id === currentQuestion.id) + 1 : 0;
   const isPlaying = selectIsPlaying(state);
   const showResumedBanner = state.phase.kind === "ready" && state.phase.resumedAtSec !== null;
-  const endedFallback = state.phase.kind === "playing" && state.phase.endedFallback;
-  const replayEndNotice = state.phase.kind === "rewarded" && state.phase.replayEnd;
+  const endedFallback = state.inlineNotice === "ended_fallback";
+  const replayEndNotice = state.phase.kind === "rewarded" && state.inlineNotice === "replay_end";
   const claimResult = state.phase.kind === "rewarded" ? state.phase.result : null;
   const quizStep = state.phase.kind === "quiz" ? state.phase.step : null;
   const pendingChoice = state.phase.kind === "quiz" ? state.phase.pendingChoice : null;
@@ -448,7 +453,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // <VideoPlayer> remounts with a NEW container div — confirmed against real Chrome: this, not
   // the seekTo-alone-on-ENDED quirk, was the actual reason an early replay-restart fix still
   // failed in a real browser.
-  const isLoading = state.phase.kind === "loading" && !state.phase.reloadingInPlace;
+  const isLoading = state.phase.kind === "loading" && !state.reloadingInPlace;
 
   return (
     <>
