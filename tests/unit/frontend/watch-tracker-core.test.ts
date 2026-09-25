@@ -56,6 +56,30 @@ describe("WatchTracker.onFrame — anti-cheat per-frame checks (plan §6)", () =
   });
 });
 
+describe("WatchTracker.notePaused — trust a confirmed PAUSED position outright (planner review: pause-resume false resync)", () => {
+  it("raises the high-water mark to the paused position, then honest playback from there advances normally with no seek_guard", () => {
+    const t = new WatchTracker(6.91);
+    t.notePaused(7.18); // YouTube's ~0.27s pause lag landed currentTime ahead of maxReached
+    expect(t.maxReached).toBe(7.18);
+
+    const d = t.onFrame(7.3, 0.016, [], []);
+    expect(d).toEqual({ kind: "none" });
+    expect(t.maxReached).toBeCloseTo(7.3, 5);
+  });
+
+  it("does not lift the mark past SEEK_GUARD_SLACK_SEC — a devtools seek while paused still can't use this to escape the guard", () => {
+    const t = new WatchTracker(6.91);
+    t.notePaused(6.91 + 5); // far beyond the 1.5s slack
+    expect(t.maxReached).toBe(6.91);
+  });
+
+  it("never lowers the high-water mark (a pause reported behind it is simply ignored)", () => {
+    const t = new WatchTracker(10);
+    t.notePaused(4);
+    expect(t.maxReached).toBe(10);
+  });
+});
+
 describe("WatchTracker — rAF gap and drag tolerance (review MINOR/BLOCKER acceptance)", () => {
   it("a 1.2s rAF gap is accepted as an advance, not snapped back", () => {
     const t = new WatchTracker(10);

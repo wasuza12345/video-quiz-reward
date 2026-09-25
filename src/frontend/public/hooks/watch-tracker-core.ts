@@ -65,4 +65,20 @@ export class WatchTracker {
   reconcile(serverFurthestSec: number): void {
     this.maxReachedSec = serverFurthestSec;
   }
+
+  /**
+   * Call when the player reports a real PAUSED state, with its actual paused position. YouTube
+   * keeps playing for ~0.27s after a pause click before the state change actually lands — by the
+   * time it does, currentTime can already be past ADVANCE_FLOOR_SEC ahead of the high-water mark,
+   * landing every frame since in onFrame's "not yet trusted" middle band forever (nothing ever
+   * advances maxReachedSec again). A confirmed pause is exactly the moment we can trust that
+   * position outright — it's not a rate-limited per-frame guess, it's where the player actually,
+   * definitely stopped. Bounded by SEEK_GUARD_SLACK_SEC so a devtools seek-while-paused can't use
+   * this to lift the high-water mark past what the seek guard would otherwise catch.
+   */
+  notePaused(currentTime: number): void {
+    if (currentTime > this.maxReachedSec && currentTime - this.maxReachedSec <= SEEK_GUARD_SLACK_SEC) {
+      this.maxReachedSec = currentTime;
+    }
+  }
 }

@@ -37,6 +37,9 @@ export interface WatchTrackerApi {
   /** The tracker's local high-water mark (display only — server furthestSec stays authoritative
    * for anti-cheat; see usePlayerProgress). */
   getMaxReached: () => number;
+  /** Call with the player's actual position once it reports a real PAUSED state — see
+   * WatchTracker.notePaused. WatchPage's onStateChange(PAUSED) handler wires this. */
+  notePaused: (currentTime: number) => void;
 }
 
 export function useWatchTracker({
@@ -128,5 +131,12 @@ export function useWatchTracker({
     return () => clearInterval(interval);
   }, [player, active, writer, dispatch]);
 
-  return useMemo(() => ({ isGateInFlight: () => gateInFlight.current, getMaxReached: () => tracker.maxReached }), [tracker]);
+  return useMemo(
+    () => ({
+      isGateInFlight: () => gateInFlight.current,
+      getMaxReached: () => tracker.maxReached,
+      notePaused: (currentTime: number) => tracker.notePaused(currentTime),
+    }),
+    [tracker],
+  );
 }

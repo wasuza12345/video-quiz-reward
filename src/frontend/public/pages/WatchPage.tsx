@@ -210,6 +210,10 @@ export function WatchPage({ videoId }: WatchPageProps) {
       } else if (ytState === YT_PLAYER_STATE.PAUSED || ytState === YT_PLAYER_STATE.CUED) {
         clearAutoplayGuard();
         if (ytState === YT_PLAYER_STATE.CUED) return;
+        // YouTube keeps playing ~0.27s past the pause click before this event lands — trust this
+        // confirmed position outright so the tracker's high-water mark doesn't get stranded just
+        // below it (planner review: "pause-resume no false resync").
+        trackerApi.notePaused(currentTime);
         setAutoResuming(false);
         clearAutoResumingBackstop();
         // The gate-hit flow (useWatchTracker) already calls player.pauseVideo() and sends its
