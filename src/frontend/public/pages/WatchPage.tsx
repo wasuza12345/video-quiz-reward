@@ -405,15 +405,17 @@ export function WatchPage({ videoId }: WatchPageProps) {
       // in that window must be a no-op here, not a second /answer that the server rejects as
       // NOT_AT_QUIZ (which would cancel the pending auto-resume).
       if (state.phase.kind !== "quiz" || state.phase.step !== "answering") return;
+      const question = selectCurrentQuestion(state);
+      if (!question) return;
       // answerLockRef guards the narrower race QuizModal's own `disabled` prop can't: two clicks
       // on two DIFFERENT choice buttons landing close enough together that both DOM click
       // handlers fire — and both close over the same pre-dispatch `state` — before React
       // re-renders and disables the buttons. Set synchronously so the second call (even in the
-      // same tick) sees it, unlike the state check above.
+      // same tick) sees it, unlike the state check above. Set only after the question lookup: an
+      // earlier return above (a desynced null question) must never leave the lock stuck, since
+      // nothing else would ever clear it for this same "answering" step.
       if (answerLockRef.current) return;
       answerLockRef.current = true;
-      const question = selectCurrentQuestion(state);
-      if (!question) return;
       dispatch({ type: "ANSWER_SUBMITTED", choice });
       void writer.sendAnswer(question.id, choice).then((result) => {
         if ("failed" in result) dispatch({ type: "ANSWER_FAILED", code: result.code });
