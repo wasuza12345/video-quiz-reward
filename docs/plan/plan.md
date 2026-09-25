@@ -57,7 +57,7 @@ video-quiz-reward/
 │  ├─ frontend/
 │  │  ├─ public/
 │  │  │  ├─ pages/       VideoListPage.tsx · WatchPage.tsx
-│  │  │  ├─ components/  FeaturedVideoCard · VideoCard · VideoPlayer · QuizModal · RewardBanner · PointsBadge · ControlBar + LiveControlBar · WatchProgress
+│  │  │  ├─ components/  FeaturedVideoCard · VideoCard · VideoPlayer · QuizModal · RewardCard · PointsBadge · ControlBar + LiveControlBar · WatchProgress
 │  │  │  ├─ hooks/       useYouTubePlayer · useWatchTracker + watch-tracker-core · useSessionWriter + session-writer-core (seq + single in-flight queue) · usePlayerProgress
 │  │  │  ├─ state/       watch.reducer.ts · watch.actions.ts · watch.selectors.ts
 │  │  │  └─ services/ · types/ · constants/

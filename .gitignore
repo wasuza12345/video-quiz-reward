@@ -36,3 +36,8 @@ coverage/
 
 # ad-hoc manual-verification screenshots (not build artifacts)
 docs/screenshots/
+
+# agent-team config and CLI instructions (local only, human 2026-09-25)
+.agent/
+CLAUDE.md
+AGENTS.md
