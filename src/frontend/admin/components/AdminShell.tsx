@@ -78,9 +78,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
         if (cancelled) return;
         // Tester audit MINOR 3: a network error, timeout or 5xx used to be treated exactly like
         // an expired session (401 UNAUTHENTICATED) and kicked a still-valid admin to the login
-        // page. Only a real UNAUTHENTICATED redirects; anything else shows an in-shell retry
-        // instead, keeping the admin on the page.
-        if (err instanceof AdminApiError && err.code === "UNAUTHENTICATED") {
+        // page. Only a real 401 redirects; anything else shows an in-shell retry instead, keeping
+        // the admin on the page. Checks err.status too, not just err.code: a 401 with a non-JSON
+        // body (e.g. Vercel Deployment Protection on a preview URL) has no parseable error.code
+        // (AdminApiError falls back to "UNKNOWN"), which would otherwise show the retry state
+        // forever for a session that's genuinely expired.
+        if (err instanceof AdminApiError && (err.code === "UNAUTHENTICATED" || err.status === 401)) {
           router.push("/admin/login?reason=expired");
         } else {
           setMeError(true);

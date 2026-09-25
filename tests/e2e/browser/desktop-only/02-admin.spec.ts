@@ -48,6 +48,18 @@ test("AdminShell: a network failure on /api/admin/auth/me shows a retry state an
   await page.waitForURL(/\/admin\/login\?reason=expired/, { timeout: 10_000 });
 });
 
+// reviewer follow-up: a 401 with a non-JSON body (e.g. Vercel Deployment Protection's own HTML
+// interstitial on a preview URL) used to parse as AdminApiError's "UNKNOWN" fallback code, so the
+// UNAUTHENTICATED-only check never matched — the admin got stuck in the retry state forever
+// instead of being sent to log in.
+test("AdminShell: a 401 with a non-JSON body still redirects to login", async ({ page }) => {
+  await adminLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+
+  await page.route("**/api/admin/auth/me", (route) => route.fulfill({ status: 401, contentType: "text/html", body: "<html><body>Authentication Required</body></html>" }));
+  await page.reload();
+  await page.waitForURL(/\/admin\/login\?reason=expired/, { timeout: 10_000 });
+});
+
 test("create video → publish → feature → shows on / → session timeline → locked fields → logout", async ({ page }) => {
   // Planner review: AdminSessionDetailPage's Fact component used to wrap `sub` in a <p>, and the
   // playedWallSec Fact passes a <ProgressBar> (renders a <div>) as sub — a <div> nested in a <p>

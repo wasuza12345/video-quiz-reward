@@ -19,6 +19,7 @@ import { YouTubePreview, type YouTubePreviewHandle } from "../components/YouTube
 import { videoForm as copy, sessions as sessionsCopy } from "../constants/copy.th";
 import { formatMmSsTenths } from "../lib/time";
 import { parseYoutubeId } from "@/shared/youtube-id";
+import { VIDEO_ISSUE } from "@/shared/constants/video";
 import type { AdminQuestionDetail, AdminVideoDetail } from "@/shared/contracts/admin";
 import { AdminApiError, adminApi } from "../services/api";
 
@@ -38,11 +39,11 @@ export function publishOrFeatureErrorMessage(err: { code: string; extra: Record<
 }
 
 /** Thai copy for a youtubeUrl save-validation issue. The server's own issue.message distinguishes
- * "already added" (video.service.ts, a duplicate) from every other reason (invalid/unembeddable
- * URL) — used to always map to the generic "invalid link" copy, even a duplicate (tester audit
- * MINOR 1). Pure/exported for tests/unit/frontend/admin-video-form-errors.test.ts. */
+ * VIDEO_ISSUE.ALREADY_ADDED (video.service.ts, a duplicate) from every other reason (invalid/
+ * unembeddable URL) — used to always map to the generic "invalid link" copy, even a duplicate
+ * (tester audit MINOR 1). Pure/exported for tests/unit/frontend/admin-video-form-errors.test.ts. */
 export function youtubeUrlIssueMessage(issueMessage: string): string {
-  return issueMessage === "already added" ? copy.fields.youtubeUrl.duplicateError : copy.fields.youtubeUrl.error;
+  return issueMessage === VIDEO_ISSUE.ALREADY_ADDED ? copy.fields.youtubeUrl.duplicateError : copy.fields.youtubeUrl.error;
 }
 
 export function AdminVideoFormPage({ videoId }: { videoId?: string }) {

@@ -3,6 +3,7 @@ import { AppError } from "@/backend/common/errors/app-error";
 import type { AuditContext } from "@/backend/common/audit/audit-log";
 import { fetchYoutubeOembed } from "@/backend/lib/youtube";
 import { parseYoutubeId } from "@/shared/youtube-id";
+import { VIDEO_ISSUE } from "@/shared/constants/video";
 import type { AdminCreateVideoBody, AdminQuestionDetail, AdminUpdateVideoBody, AdminVideoDetail, AdminVideoListItem, Paged } from "@/shared/contracts/admin";
 import type { PublicVideoItem, VideoListResponse } from "@/shared/contracts/video";
 import type { RewardRepository } from "../reward/reward.interface";
@@ -142,7 +143,7 @@ export function createVideoService(deps: { videoRepo: VideoRepository; rewardRep
         return toAdminListItem(row);
       } catch (err) {
         if (isUniqueViolation(err)) {
-          throw new AppError("VALIDATION_ERROR", "this video has already been added", { issues: [{ path: "youtubeUrl", message: "already added" }] });
+          throw new AppError("VALIDATION_ERROR", "this video has already been added", { issues: [{ path: "youtubeUrl", message: VIDEO_ISSUE.ALREADY_ADDED }] });
         }
         throw err;
       }
@@ -191,7 +192,7 @@ export function createVideoService(deps: { videoRepo: VideoRepository; rewardRep
         return toAdminListItem(row);
       } catch (err) {
         if (isUniqueViolation(err)) {
-          throw new AppError("VALIDATION_ERROR", "this video has already been added", { issues: [{ path: "youtubeUrl", message: "already added" }] });
+          throw new AppError("VALIDATION_ERROR", "this video has already been added", { issues: [{ path: "youtubeUrl", message: VIDEO_ISSUE.ALREADY_ADDED }] });
         }
         throw err;
       }

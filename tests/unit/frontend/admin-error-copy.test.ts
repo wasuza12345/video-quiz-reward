@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { publishOrFeatureErrorMessage, youtubeUrlIssueMessage } from "@/frontend/admin/pages/AdminVideoFormPage";
 import { mapQuestionSaveError } from "@/frontend/admin/components/QuizEditor";
+import { VIDEO_ISSUE } from "@/shared/constants/video";
 
 describe("publishOrFeatureErrorMessage (no raw English toasts)", () => {
   it("names the offending question's trigger time for INVALID_TRIGGER", () => {
@@ -33,8 +34,8 @@ describe("publishOrFeatureErrorMessage (no raw English toasts)", () => {
 });
 
 describe("youtubeUrlIssueMessage (tester audit MINOR 1: a duplicate must not show the generic invalid-link copy)", () => {
-  it("maps the server's 'already added' issue message to the duplicate-clip copy", () => {
-    expect(youtubeUrlIssueMessage("already added")).toBe("คลิปนี้ถูกเพิ่มไว้แล้วค่ะ");
+  it("maps the server's VIDEO_ISSUE.ALREADY_ADDED issue message to the duplicate-clip copy", () => {
+    expect(youtubeUrlIssueMessage(VIDEO_ISSUE.ALREADY_ADDED)).toBe("คลิปนี้ถูกเพิ่มไว้แล้วค่ะ");
   });
 
   it("falls back to the generic invalid-link copy for every other issue message", () => {

@@ -7,6 +7,7 @@ import { GET as listVideos, POST as createVideo } from "@/app/api/admin/videos/r
 import { POST as createQuestion } from "@/app/api/admin/videos/[id]/questions/route";
 import { POST as postSessions } from "@/app/api/sessions/route";
 import { prisma } from "@/backend/lib/prisma";
+import { VIDEO_ISSUE } from "@/shared/constants/video";
 import { adminRequest, createTestAdmin, newUserId, paramsOf, postJson } from "./helpers";
 
 vi.mock("@/backend/lib/youtube", async (importOriginal) => {
@@ -116,9 +117,9 @@ describe("admin video CRUD (plan §4.4/§4.5/§7)", () => {
     expect(second.status).toBe(400);
     const secondBody = await second.json();
     expect(secondBody.error.code).toBe("VALIDATION_ERROR");
-    // AdminVideoFormPage's youtubeUrlIssueMessage keys off this exact string to show a
+    // AdminVideoFormPage's youtubeUrlIssueMessage keys off this exact value to show a
     // "already added" copy instead of the generic invalid-link one (tester audit MINOR 1).
-    expect(secondBody.error.issues).toEqual([{ path: "youtubeUrl", message: "already added" }]);
+    expect(secondBody.error.issues).toEqual([{ path: "youtubeUrl", message: VIDEO_ISSUE.ALREADY_ADDED }]);
   });
 
   it("rewardPoints out of the 1-1000 range → 400 VALIDATION_ERROR", async () => {
