@@ -12,7 +12,7 @@
 // rendered frame, so they keep the original plain seekTo+pause.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { YT_PLAYER_STATE } from "@/frontend/public/player/youtube-player-types";
 import { YouTubePreview, type YouTubePreviewHandle } from "@/frontend/admin/components/YouTubePreview";
 
@@ -84,12 +84,19 @@ class FakeAdminPlayer {
     this.state = YT_PLAYER_STATE.PLAYING;
     this.events.onStateChange({ data: YT_PLAYER_STATE.PLAYING });
   }
+
+  /** Test-only: the natural mid-transition state between playVideo() and a real PLAYING
+   * confirmation — no event fires for this one in real YouTube either. */
+  simulateBuffering() {
+    this.state = YT_PLAYER_STATE.BUFFERING;
+  }
 }
 
 let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  vi.useFakeTimers();
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   (window as unknown as { YT: unknown }).YT = { Player: FakeAdminPlayer };
   FakeAdminPlayer.instances = [];
@@ -103,6 +110,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   delete (window as unknown as { YT?: unknown }).YT;
+  vi.useRealTimers();
 });
 
 async function flush() {
@@ -110,6 +118,12 @@ async function flush() {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+  });
+}
+
+async function wait(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
   });
 }
 
@@ -185,5 +199,81 @@ describe.each([
     expect(player.playVideoCallCount, "must not force a play — a frame is already showing").toBe(0);
     expect(player.muteCallCount, "must not mute").toBe(0);
     expect(player.unMuteCallCount, "must not unmute").toBe(0);
+  });
+});
+
+// Reviewer MAJOR (round 2 on this branch): a repeat "ไปที่เวลานี้" before the first PLAYING used
+// to leave the preview permanently muted, two different ways. Both must fail on 9347a02.
+describe("YouTubePreview.seekTo: a repeat click before the unstick resolves", () => {
+  it("a 2nd seekTo while still UNSTARTED/CUED (PLAYING still hasn't landed) does not adopt our own mute() as the pre-existing mute state", async () => {
+    nextInitialState = YT_PLAYER_STATE.UNSTARTED;
+    const { handle, player } = await renderAndGetHandle();
+
+    handle.seekTo(5);
+    expect(player.isMuted(), "sanity: the first click must have muted it").toBe(true);
+
+    // Still UNSTARTED — the real PLAYING confirmation from the first click's playVideo() hasn't
+    // arrived yet. A bug here re-reads isMuted() (now true, from OUR OWN mute call) as "was
+    // already muted", which then skips the eventual unMute() forever.
+    handle.seekTo(10);
+
+    act(() => player.simulatePlaying());
+    await flush();
+
+    expect(player.pauseVideoCallCount, "must pause once PLAYING actually lands").toBe(1);
+    expect(player.unMuteCallCount, "must restore — the preview was never muted before either click").toBe(1);
+    expect(player.isMuted(), "must end up unmuted").toBe(false);
+    expect(player.seekToCalls.at(-1), "must have sought to the latest target").toBe(10);
+  });
+
+  it("a 2nd seekTo while BUFFERING (mid-unstick, not yet PLAYING) restores the mute synchronously instead of silently dropping it", async () => {
+    nextInitialState = YT_PLAYER_STATE.UNSTARTED;
+    const { handle, player } = await renderAndGetHandle();
+
+    handle.seekTo(5);
+    expect(player.muteCallCount, "sanity: the first click must have muted it").toBe(1);
+
+    player.simulateBuffering(); // the natural mid-transition state; no PLAYING yet
+    handle.seekTo(10); // takes the "plain" path — BUFFERING isn't one of the unstick states
+
+    expect(player.unMuteCallCount, "must restore the mute synchronously, right here — not silently drop it").toBe(1);
+    expect(player.isMuted(), "must end up unmuted").toBe(false);
+    expect(player.seekToCalls.at(-1), "must have sought to the latest target").toBe(10);
+    expect(player.pauseVideoCallCount, "must pause via the normal plain-path pause").toBeGreaterThanOrEqual(1);
+
+    // A late PLAYING confirmation from the ORIGINAL playVideo() call, if it ever arrives, must be a
+    // no-op now — this unstick attempt was already resolved by the 2nd seek above.
+    const pauseCountBefore = player.pauseVideoCallCount;
+    const unmuteCountBefore = player.unMuteCallCount;
+    act(() => player.simulatePlaying());
+    await flush();
+    expect(player.pauseVideoCallCount, "a late PLAYING from the resolved attempt must not double-pause").toBe(pauseCountBefore);
+    expect(player.unMuteCallCount, "must not double-unmute").toBe(unmuteCountBefore);
+  });
+});
+
+// Reviewer MINOR: if the muted play never yields PLAYING at all (autoplay blocked), the unstick
+// must not stay armed forever — it must not leave the preview muted, and it must not swallow a
+// later, genuinely user-driven Play. Must fail on 9347a02 (no backstop existed at all).
+describe("YouTubePreview.seekTo: PLAYING never arrives", () => {
+  it("the ~3s backstop restores the mute and disarms; a later real Play isn't paused", async () => {
+    nextInitialState = YT_PLAYER_STATE.UNSTARTED;
+    const { handle, player } = await renderAndGetHandle();
+
+    handle.seekTo(10);
+    expect(player.isMuted(), "sanity: muted to force the play").toBe(true);
+    expect(player.unMuteCallCount, "must not have restored yet — well under the backstop's patience").toBe(0);
+
+    await wait(3_100); // past the ~3s backstop; PLAYING (autoplay blocked) never arrived
+
+    expect(player.unMuteCallCount, "the backstop must restore the mute on its own").toBe(1);
+    expect(player.isMuted(), "must end up unmuted").toBe(false);
+
+    // A later, genuinely user-driven Play must not be treated as this (already-resolved) unstick's
+    // own confirmation and get silently paused.
+    const pauseCountBefore = player.pauseVideoCallCount;
+    act(() => player.simulatePlaying());
+    await flush();
+    expect(player.pauseVideoCallCount, "a later real Play must not be swallowed").toBe(pauseCountBefore);
   });
 });
