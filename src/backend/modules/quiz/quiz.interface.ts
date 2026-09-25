@@ -1,17 +1,7 @@
 import type { AuditContext } from "@/backend/common/audit/audit-log";
+import type { PublicChoice, PublicQuestion } from "@/shared/contracts/session";
 
-export interface PublicChoice {
-  label: string;
-  text: string;
-}
-
-/** Public shape — `correctChoice` never leaves the server (plan §3). */
-export interface PublicQuestion {
-  id: string;
-  triggerSec: number;
-  prompt: string;
-  choices: PublicChoice[];
-}
+export type { PublicChoice, PublicQuestion };
 
 export interface AnswerQuestion {
   id: string;

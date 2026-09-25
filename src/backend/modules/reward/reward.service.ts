@@ -1,17 +1,12 @@
 import { decideClaim } from "@/backend/domain/reward-policy";
 import { AppError } from "@/backend/common/errors/app-error";
+import type { ClaimResponse } from "@/shared/contracts/session";
 import type { VideoRepository } from "../video/video.interface";
 import type { WatchSessionRepository } from "../watch-session/watch-session.interface";
 import type { RewardRepository } from "./reward.interface";
 
-export interface ClaimResult {
-  awarded: boolean;
-  points: number;
-  totalPoints: number;
-}
-
 export interface RewardService {
-  claim(sessionId: string, userId: string): Promise<ClaimResult>;
+  claim(sessionId: string, userId: string): Promise<ClaimResponse>;
 }
 
 export function createRewardService(deps: {

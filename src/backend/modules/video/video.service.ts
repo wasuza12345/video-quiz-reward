@@ -3,24 +3,9 @@ import { AppError } from "@/backend/common/errors/app-error";
 import type { AuditContext } from "@/backend/common/audit/audit-log";
 import { fetchYoutubeOembed, parseYoutubeId } from "@/backend/lib/youtube";
 import type { AdminCreateVideoBody, AdminUpdateVideoBody, AdminVideoDetail, AdminVideoListItem, Paged } from "@/shared/contracts/admin";
+import type { PublicVideoItem, VideoListResponse } from "@/shared/contracts/video";
 import type { RewardRepository } from "../reward/reward.interface";
 import type { AdminQuestionRow, AdminVideoRow, AdminVideoWithQuestions, VideoRepository, VideoRow } from "./video.interface";
-
-export interface PublicVideoItem {
-  id: string;
-  youtubeId: string;
-  title: string;
-  channelName: string;
-  durationSec: number;
-  rewardPoints: number;
-  rewarded: boolean;
-  questionCount: number;
-}
-
-export interface VideoListResult {
-  featured: PublicVideoItem | null;
-  videos: PublicVideoItem[];
-}
 
 function toPublicItem(row: VideoRow, rewarded: boolean): PublicVideoItem {
   return {
@@ -90,7 +75,7 @@ function assertQuestionsPublishable(questions: AdminQuestionRow[], durationSec: 
 }
 
 export interface VideoService {
-  listVideos(userId: string): Promise<VideoListResult>;
+  listVideos(userId: string): Promise<VideoListResponse>;
   adminList(page: number, pageSize: number): Promise<Paged<AdminVideoListItem>>;
   adminDetail(id: string): Promise<AdminVideoDetail>;
   adminCreate(input: AdminCreateVideoBody, admin: AuditContext): Promise<AdminVideoListItem>;
@@ -214,7 +199,7 @@ export function createVideoService(deps: { videoRepo: VideoRepository; rewardRep
     async adminPublish(id, admin) {
       const video = await requireAdminRow(id);
       // Idempotent: re-clicking "publish" on an already-published video just returns it as-is,
-      // rather than erroring or re-validating (a documented choice).
+      // rather than erroring or re-validating.
       if (video.status === "published") return toAdminListItem(video);
 
       assertQuestionsPublishable(video.questions, video.durationSec);

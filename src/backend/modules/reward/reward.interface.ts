@@ -1,7 +1,4 @@
-export interface UserRewardSummary {
-  totalPoints: number;
-  rewardedVideoIds: string[];
-}
+import type { MeResponse } from "@/shared/contracts/video";
 
 export interface ClaimOutcome {
   awarded: boolean;
@@ -10,7 +7,7 @@ export interface ClaimOutcome {
 
 export interface RewardRepository {
   /** Unknown/never-written userId returns `{ totalPoints: 0, rewardedVideoIds: [] }` (plan §4.1). */
-  getUserSummary(userId: string): Promise<UserRewardSummary>;
+  getUserSummary(userId: string): Promise<MeResponse>;
   /** Which of `videoIds` this user already has a ledger row for — used for GET /api/videos `rewarded`. */
   findRewardedVideoIds(userId: string, videoIds: string[]): Promise<Set<string>>;
   /**

@@ -1,5 +1,6 @@
 import { Prisma, prisma } from "@/backend/lib/prisma";
-import type { ClaimOutcome, RewardRepository, UserRewardSummary } from "./reward.interface";
+import type { MeResponse } from "@/shared/contracts/video";
+import type { ClaimOutcome, RewardRepository } from "./reward.interface";
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -7,7 +8,7 @@ function isUniqueViolation(err: unknown): boolean {
 
 export function createRewardRepository(): RewardRepository {
   return {
-    async getUserSummary(userId): Promise<UserRewardSummary> {
+    async getUserSummary(userId): Promise<MeResponse> {
       const ledger = await prisma.pointsLedger.findMany({ where: { userId }, select: { points: true, videoId: true } });
       return {
         totalPoints: ledger.reduce((sum, row) => sum + row.points, 0),

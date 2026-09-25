@@ -3,8 +3,9 @@ import { applyAnswer as applyAnswerDomain, applyClientEvents } from "@/backend/d
 import type { ClientEvent, VideoRules } from "@/backend/domain/types";
 import { AppError } from "@/backend/common/errors/app-error";
 import { EVENT_CAPS } from "@/shared/constants/session";
-import type { ClientEventType, SessionState } from "@/shared/constants/session";
-import type { PublicQuestion, QuizRepository } from "../quiz/quiz.interface";
+import type { ClientEventType } from "@/shared/constants/session";
+import type { AnswerResponse, EventsApplyResponse, PublicQuestion, SessionCreateResponse, SessionResponseVideo } from "@/shared/contracts/session";
+import type { QuizRepository } from "../quiz/quiz.interface";
 import type { UserRepository } from "../user/user.interface";
 import type { VideoRepository, VideoRow } from "../video/video.interface";
 import type { EventInput, SessionRow, WatchSessionRepository } from "./watch-session.interface";
@@ -14,43 +15,6 @@ export interface EventInputBody {
   type: ClientEventType;
   positionSec: number;
   clientAt?: string;
-}
-
-export interface SessionResponseVideo {
-  id: string;
-  youtubeId: string;
-  title: string;
-  channelName: string;
-  durationSec: number;
-  rewardPoints: number;
-}
-
-export interface SessionCreateResult {
-  sessionId: string;
-  state: SessionState;
-  positionSec: number;
-  furthestSec: number;
-  lastSeq: number;
-  isReplay: boolean;
-  alreadyRewarded: boolean;
-  currentQuestionId: string | null;
-  passedQuestionIds: string[];
-  video: SessionResponseVideo;
-  quizzes: PublicQuestion[];
-}
-
-export interface EventsApplyResult {
-  state: SessionState;
-  positionSec: number;
-  furthestSec: number;
-  lastSeq: number;
-  currentQuestionId: string | null;
-  results: Array<{ seq: number; accepted: boolean; rejectReason: string | null }>;
-}
-
-export interface AnswerApplyResult {
-  correct: boolean;
-  state: SessionState;
 }
 
 function toVideoRules(video: VideoRow, questions: PublicQuestion[]): VideoRules {
@@ -80,9 +44,9 @@ function sessionEventCap(durationSec: number): number {
 }
 
 export interface WatchSessionService {
-  createOrResume(userId: string, videoId: string): Promise<SessionCreateResult>;
-  applyEvents(sessionId: string, userId: string, events: EventInputBody[]): Promise<EventsApplyResult>;
-  applyAnswer(sessionId: string, userId: string, questionId: string, choice: string): Promise<AnswerApplyResult>;
+  createOrResume(userId: string, videoId: string): Promise<SessionCreateResponse>;
+  applyEvents(sessionId: string, userId: string, events: EventInputBody[]): Promise<EventsApplyResponse>;
+  applyAnswer(sessionId: string, userId: string, questionId: string, choice: string): Promise<AnswerResponse>;
 }
 
 export function createWatchSessionService(deps: {
@@ -153,7 +117,7 @@ export function createWatchSessionService(deps: {
       // A prefix of the batch may be a retry of an already-accepted request (network loss on
       // the previous response): seqs are validated strictly increasing, so once we see one
       // past lastSeq, every following one is new too (plan §4.2).
-      const echoed: EventsApplyResult["results"] = [];
+      const echoed: EventsApplyResponse["results"] = [];
       let splitAt = 0;
       for (; splitAt < events.length && events[splitAt].seq <= row.lastSeq; splitAt++) {
         const e = events[splitAt];
