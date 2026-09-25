@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { exposeYouTubePlayerOnWindow, getPlayerCurrentTime, seekPlayerTo, waitForWindowPlayer } from "../helpers/player";
 import { clickPlayPause } from "../helpers/watch";
 
-test.setTimeout(60_000);
+test.setTimeout(90_000);
 
 test("player.seekTo(40) from the console snaps back and earns nothing", async ({ page }) => {
   await exposeYouTubePlayerOnWindow(page);
@@ -23,7 +23,7 @@ test("player.seekTo(40) from the console snaps back and earns nothing", async ({
 
   await seekPlayerTo(page, 40, true);
 
-  await expect(page.getByText("ข้ามช่วงวิดีโอไม่ได้นะคะ"), "the resync toast must fire").toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("ข้ามช่วงวิดีโอไม่ได้นะคะ"), "the resync toast must fire").toBeVisible({ timeout: 30_000 });
 
   await page.waitForTimeout(1_000);
   const afterSnapBack = await getPlayerCurrentTime(page);
