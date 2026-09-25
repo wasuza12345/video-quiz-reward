@@ -265,7 +265,9 @@ async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitl
 
     const consoleErrorsBeforeDetail = consoleErrors.length;
     await rewardedRow.getByRole("link").first().click();
-    await page.waitForURL(/\/admin\/sessions\/[0-9a-f-]{20,}$/, { timeout: 10_000 });
+    // `(\?.*)?$`, not a bare `$`: the back-links feature (f372fca) now appends a `?from=` deep-link
+    // param to this URL when navigated here via a list row link.
+    await page.waitForURL(/\/admin\/sessions\/[0-9a-f-]{20,}(\?.*)?$/, { timeout: 10_000 });
 
     // playedWallSec's Fact renders a <ProgressBar> (a <div>) as `sub` — used to be wrapped in a
     // <p>, invalid HTML that logged 2 console errors on every visit (the dev overlay's "2 issues").
@@ -291,7 +293,8 @@ async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitl
     await page.goto("/admin/videos");
     // .first(): desktop table + mobile list both render in the DOM at once.
     await page.getByRole("link", { name: /ตัวอย่างคลิป/ }).first().click();
-    await page.waitForURL(/\/admin\/videos\/[^/]+$/, { timeout: 10_000 });
+    // Same back-links `?from=` param as above — allow an optional query string here too.
+    await page.waitForURL(/\/admin\/videos\/[^/?]+(\?.*)?$/, { timeout: 10_000 });
     await expect(page.locator("#video-locked-notice"), "a video with sessions must show the lock notice").toBeVisible({ timeout: 10_000 });
 
     await page.getByRole("button", { name: /Where does the flower bloom/ }).click();
