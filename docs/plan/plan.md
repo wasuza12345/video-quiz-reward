@@ -471,6 +471,7 @@ the reducer reconciles to it: 409 or rejected progress → adopt server `positio
   VIDEO_STATUSES to shared/constants, INTERNAL_ERROR code). ~36→32 files, ~−60 lines, no behaviour change. Scheduled via clean-code-review-2.md (#2–#9).
   Note: the 2 MAJORs are ~7 lines, zero-risk — fold them in only if a later phase touches those files anyway (needs human OK).
 - P7 test gap (reviewer MINOR on 27790d4): add a unit test that pins "seek guard still armed after 1.5 s" (arm → advance fake timers 3 s → spurious PLAYING → swallowed; fails on 98a30a7). Test-only, not scheduled.
+- ✅ FIXED a1981fb — Replay-after-network-error dead player (reviewer, pre-existing on main): end → claim → Replay → POST /api/sessions fails → error screen → Retry → new session loads but Play does nothing until a full reload. Cause: the error phase returns <ErrorState> early (WatchPage.tsx:413), unmounting <VideoPlayer>; useYouTubePlayer only re-runs on [youtubeId,title], so `player` points at a detached iframe. Fix: keep VideoPlayer mounted in the error phase or key the player effect on the container. Scheduled after #12 (watch files owned by coder-2 until then).
 
 ## 11. Decisions (all closed 2026-09-24)
 - **D1 prod DB:** Turso + Prisma libsql adapter (Vercel Marketplace `tursocloud/database`).
