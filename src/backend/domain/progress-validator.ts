@@ -1,6 +1,7 @@
 // Progress rules (plan §6). Pure: no IO, no clock — serverAt is passed in.
 // Per event the order is fixed: (1) credit play time, (2) bucket / seek check, (3) quiz gate.
 import { TOLERANCES } from "@/shared/constants/session";
+import { nextUnpassedQuestion } from "@/shared/rules/quiz-gate";
 import type { QuizGate, SessionSnapshot } from "./types";
 
 const { CREDIT_CAP_SEC, BANK_RATE, BANK_MAX_SEC, FORWARD_SLACK_SEC } = TOLERANCES;
@@ -51,15 +52,8 @@ export function checkSeek(s: SessionSnapshot, pos: number): SeekCheck {
   return { ok: false, reason: "SEEK_FORWARD" };
 }
 
-/** The earliest question not yet passed, or null when all are passed. */
-export function nextUnpassedQuestion(questions: QuizGate[], passedQuestionIds: string[]): QuizGate | null {
-  let next: QuizGate | null = null;
-  for (const q of questions) {
-    if (passedQuestionIds.includes(q.id)) continue;
-    if (!next || q.triggerSec < next.triggerSec) next = q;
-  }
-  return next;
-}
+/** Re-exported so callers/tests importing it from here (its pre-existing home) still work. */
+export { nextUnpassedQuestion };
 
 /** (3) Quiz gate: the question a TICK to `pos` runs into, if any (pos is then clamped to its triggerSec). */
 export function quizGateAt(questions: QuizGate[], passedQuestionIds: string[], pos: number): QuizGate | null {

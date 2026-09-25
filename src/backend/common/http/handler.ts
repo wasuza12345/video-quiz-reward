@@ -1,13 +1,11 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import type { NextRequest, NextResponse } from "next/server";
 import { AppError } from "../errors/app-error";
-import { ERROR_STATUS } from "../errors/error-codes";
 import { errorResponse } from "./response";
 
 function handleError(err: unknown): NextResponse {
   if (err instanceof AppError) return errorResponse(err);
   console.error(err);
-  return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "unexpected error" } }, { status: ERROR_STATUS.INTERNAL_ERROR });
+  return errorResponse(new AppError("INTERNAL_ERROR", "unexpected error"));
 }
 
 /**
