@@ -3,7 +3,7 @@
 Watch a YouTube clip to the end, answer the quiz that pops up mid-video, and earn points.
 The **server** decides whether a video was really watched — the browser only reports events.
 
-- **Live:** _Vercel URL — added after deploy_
+- **Live:** https://video-quiz-reward.vercel.app (admin: /admin)
 - **Stack:** Next.js 16 (App Router) · TypeScript · Prisma 7 + SQLite (local) / Turso libSQL (prod) · Vitest · Playwright
 
 ## Documents
