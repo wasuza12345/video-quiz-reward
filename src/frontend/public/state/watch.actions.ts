@@ -24,7 +24,7 @@ export type WatchAction =
   | { type: "ANSWER_SUBMITTED"; choice: string }
   | { type: "ANSWER_ACCEPTED"; result: AnswerResponse }
   | { type: "ANSWER_FAILED"; code: "network" | "INVALID_CHOICE" | "NOT_AT_QUIZ" }
-  | { type: "QUIZ_RESUME_AFTER_CORRECT" }
+  | { type: "QUIZ_RESUME_AFTER_CORRECT"; hidden: boolean }
   | { type: "VIDEO_ENDED" }
   | { type: "ENDED_ACCEPTED" }
   | { type: "ENDED_NOT_WATCHED"; seekTo: number }

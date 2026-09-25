@@ -118,6 +118,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  vi.useFakeTimers();
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   (window as unknown as { YT: unknown }).YT = { Player: StuckPlayer };
   StuckPlayer.instances = [];
@@ -132,6 +133,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   delete (window as unknown as { YT?: unknown }).YT;
+  vi.useRealTimers();
 });
 
 async function flush() {
@@ -144,7 +146,7 @@ async function flush() {
 
 async function wait(ms: number) {
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    await vi.advanceTimersByTimeAsync(ms);
   });
 }
 
@@ -183,5 +185,5 @@ describe("WatchPage: ENDED recovery backstop backoff", () => {
     // resets and reschedules itself every ~1s — over 60s that's ~60 additional sends (~63 total).
     // The fix floors the delay at 5s (outside the tight window), bounding this hard.
     expect(endedCalls.length, "ENDED sends must be bounded over 60s, not a steady ~1Hz loop (dev.db-style, until 429)").toBeLessThanOrEqual(15);
-  }, 75_000);
+  }, 15_000);
 });

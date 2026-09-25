@@ -293,7 +293,7 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
 
     case "QUIZ_RESUME_AFTER_CORRECT":
       if (state.status !== "quiz_open") return state;
-      return { ...state, status: "paused", quizPhase: null, feedback: null };
+      return { ...state, status: "paused", quizPhase: null, feedback: null, pausedByTabHidden: action.hidden };
 
     case "VIDEO_ENDED":
       return { ...state, status: "ended" };

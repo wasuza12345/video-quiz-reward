@@ -369,11 +369,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
   useEffect(() => {
     if (state.status !== "quiz_open" || state.feedback?.tone !== "correct") return;
     const t = setTimeout(() => {
-      dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT" });
+      const hidden = document.visibilityState === "hidden";
+      dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT", hidden });
       // A hidden tab never gets rAF ticks, so playVideo() here would silently start real playback
-      // (and TICKs) the user can't see or stop (planner review round 5, MINOR). Leave status
-      // "paused" (already set above) so the user resumes with an explicit tap on return.
-      if (document.visibilityState === "hidden") return;
+      // (and TICKs) the user can't see or stop. Leave status
+      // "paused" (already set above, tagged pausedByTabHidden so the "you left the tab" notice
+      // shows) so the user resumes with an explicit tap on return.
+      if (hidden) return;
       setAutoResuming(true);
       armAutoResumingBackstop();
       // A stale guard from an earlier non-autoplaying seek (e.g. a TICK-overshoot clamp while the

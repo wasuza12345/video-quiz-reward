@@ -9,7 +9,8 @@
 //
 // Fix: the 900ms timer checks document.visibilityState right when it fires. If hidden, it skips
 // setAutoResuming/armAutoResumingBackstop/player.playVideo() entirely and leaves status "paused"
-// (already set by the still-dispatched QUIZ_RESUME_AFTER_CORRECT) — the user resumes with an
+// (the still-dispatched QUIZ_RESUME_AFTER_CORRECT is tagged hidden:true, so pausedByTabHidden is
+// also set and the "you left the tab" notice shows) — the user resumes with an
 // explicit tap once they come back, exactly like any other paused video.
 //
 // This renders the REAL WatchPage (unmocked reducer/effects) and replays: wrong x3 -> correct D ->
@@ -235,6 +236,7 @@ describe("WatchPage: hidden tab skips the 900ms quiz auto-resume", () => {
     expect(player.playVideoCallCount, "playVideo() must never be called while the tab is hidden").toBe(playVideoCallsBeforeHide);
     expect(postEventsCalls.some((e) => e.type === "PLAY"), "no PLAY event must have been sent while hidden").toBe(false);
     expect(playButton(), "the Play button must be showing — status must have landed on paused, not playing").toBeTruthy();
+    expect(container.textContent, "the 'paused because you left the tab' notice must show").toContain(copy.statusLine.pausedTabHidden);
 
     // Coming back into view must not auto-play either — the fix leaves this an explicit user
     // action, not something that silently resumed off-screen.

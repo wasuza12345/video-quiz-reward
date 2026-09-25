@@ -202,9 +202,18 @@ describe("row 13, 11: answering", () => {
   it("QUIZ_RESUME_AFTER_CORRECT closes the modal → paused (row 13)", () => {
     const submitting = watchReducer(atQuiz(), { type: "ANSWER_SUBMITTED", choice: "D" });
     const correct = watchReducer(submitting, { type: "ANSWER_ACCEPTED", result: { correct: true, state: "PAUSED" } });
-    const s = watchReducer(correct, { type: "QUIZ_RESUME_AFTER_CORRECT" });
+    const s = watchReducer(correct, { type: "QUIZ_RESUME_AFTER_CORRECT", hidden: false });
     expect(s.status).toBe("paused");
     expect(s.quizPhase).toBeNull();
+    expect(s.pausedByTabHidden).toBe(false);
+  });
+
+  it("QUIZ_RESUME_AFTER_CORRECT with hidden:true tags pausedByTabHidden so the notice can show", () => {
+    const submitting = watchReducer(atQuiz(), { type: "ANSWER_SUBMITTED", choice: "D" });
+    const correct = watchReducer(submitting, { type: "ANSWER_ACCEPTED", result: { correct: true, state: "PAUSED" } });
+    const s = watchReducer(correct, { type: "QUIZ_RESUME_AFTER_CORRECT", hidden: true });
+    expect(s.status).toBe("paused");
+    expect(s.pausedByTabHidden).toBe(true);
   });
 
   it("wrong answer (row 11): that choice disabled, others re-enabled, stays quiz_open", () => {
