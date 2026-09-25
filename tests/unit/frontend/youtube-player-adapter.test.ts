@@ -150,19 +150,6 @@ describe("YouTubePlayerAdapter — autoplay-after-seek guard", () => {
     expect(cb.onPlay).toHaveBeenCalledWith(10);
   });
 
-  it("resetGuard() drops an armed guard without touching the player, so a later PLAYING is real", () => {
-    const player = new FakePlayer();
-    const cb = callbacks();
-    const adapter = new YouTubePlayerAdapter(player, cb);
-
-    adapter.seekTo(10, { resume: false }); // arms the guard, e.g. for a session that's about to be replaced
-    adapter.resetGuard();
-
-    player.setState(YT_PLAYER_STATE.PLAYING, 10);
-    adapter.handleStateChange(YT_PLAYER_STATE.PLAYING);
-    expect(player.pauseVideoCallCount, "resetGuard() must have disarmed the guard").toBe(0);
-    expect(cb.onPlay).toHaveBeenCalledWith(10);
-  });
 });
 
 describe("YouTubePlayerAdapter — seekTo / ENDED unstick", () => {

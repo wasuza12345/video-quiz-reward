@@ -43,17 +43,17 @@ describe("SESSION_LOADED — derives the starting phase from server state (spec 
 
   it("PAUSED with positionSec 6.9 → seekRequest.toSec 6.9, so the player actually seeks to where the banner claims", () => {
     const s = run([{ type: "SESSION_LOADED", session: session({ state: "PAUSED", positionSec: 6.9, furthestSec: 6.9 }) }]);
-    expect(s.seekRequest).toEqual({ toSec: 6.9, resume: false, freshSession: true });
+    expect(s.seekRequest).toEqual({ toSec: 6.9, resume: false });
   });
 
   it("a brand new session (positionSec 0) still seeks to 0, not null (replay restarts from 0)", () => {
     const s = run([{ type: "SESSION_LOADED", session: session() }]);
-    expect(s.seekRequest).toEqual({ toSec: 0, resume: false, freshSession: true });
+    expect(s.seekRequest).toEqual({ toSec: 0, resume: false });
   });
 
   it("a resumed QUIZ_PENDING session also seeks to its (nonzero) position, not just PAUSED", () => {
     const s = run([{ type: "SESSION_LOADED", session: session({ state: "QUIZ_PENDING", currentQuestionId: "q1", positionSec: 13, furthestSec: 13 }) }]);
-    expect(s.seekRequest).toEqual({ toSec: 13, resume: false, freshSession: true });
+    expect(s.seekRequest).toEqual({ toSec: 13, resume: false });
   });
 
   it("row 4: QUIZ_PENDING → quiz phase, answering step (no syncing step)", () => {
@@ -122,7 +122,7 @@ describe("quiz gate (rows 9-12)", () => {
     const syncing = watchMachine(playing, { type: "QUIZ_GATE_HIT", questionId: "q1" });
     const s = watchMachine(syncing, { type: "GATE_TICK_RESULT", state: "PLAYING", positionSec: 11, furthestSec: 12 });
     expect(s.phase).toMatchObject({ kind: "playing" });
-    expect(s.seekRequest).toEqual({ toSec: 11, resume: true, freshSession: false });
+    expect(s.seekRequest).toEqual({ toSec: 11, resume: true });
     expect(s.toast?.message).toBeTruthy();
   });
 
@@ -247,7 +247,7 @@ describe("row 14: resync — 409 SEQ_CONFLICT and rejected progress", () => {
     expect(s.phase).toEqual({ kind: "paused", reason: "user" });
     expect(s.session?.positionSec).toBe(9);
     expect(s.session?.furthestSec).toBe(12);
-    expect(s.seekRequest).toEqual({ toSec: 9, resume: false, freshSession: false });
+    expect(s.seekRequest).toEqual({ toSec: 9, resume: false });
     expect(s.toast?.message).toBeTruthy();
   });
 
@@ -272,7 +272,7 @@ describe("row 14: resync — 409 SEQ_CONFLICT and rejected progress", () => {
   it("rejected progress with a small jump (< 2s) resyncs silently, no toast", () => {
     const s = watchMachine(playing, { type: "PROGRESS_REJECTED", positionSec: 10, furthestSec: 10, jumpSec: 1.5 });
     expect(s.session?.positionSec).toBe(10);
-    expect(s.seekRequest).toEqual({ toSec: 10, resume: true, freshSession: false });
+    expect(s.seekRequest).toEqual({ toSec: 10, resume: true });
     expect(s.toast).toBeNull();
   });
 
@@ -283,7 +283,7 @@ describe("row 14: resync — 409 SEQ_CONFLICT and rejected progress", () => {
 
   it("row 15: client seek guard snaps back and toasts", () => {
     const s = watchMachine(playing, { type: "CLIENT_SEEK_GUARD", furthestSec: 8 });
-    expect(s.seekRequest).toEqual({ toSec: 8, resume: true, freshSession: false });
+    expect(s.seekRequest).toEqual({ toSec: 8, resume: true });
     expect(s.toast?.message).toBeTruthy();
   });
 
@@ -323,7 +323,7 @@ describe("rows 16-19: ended, claiming, rewarded", () => {
     const s = watchMachine(ended, { type: "ENDED_NOT_WATCHED", seekTo: 30 });
     expect(s.phase).toEqual({ kind: "playing" });
     expect(s.inlineNotice).toBe("ended_fallback");
-    expect(s.seekRequest).toEqual({ toSec: 30, resume: true, freshSession: false });
+    expect(s.seekRequest).toEqual({ toSec: 30, resume: true });
   });
 
   it("row 19: CLAIM_ACCEPTED awarded → rewarded, RewardCard data set, no replay notice", () => {

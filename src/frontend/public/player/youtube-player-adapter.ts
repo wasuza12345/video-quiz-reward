@@ -68,13 +68,6 @@ export class YouTubePlayerAdapter {
     this.player.seekTo(sec, true);
   }
 
-  /** Drops any armed guard without touching the player itself — for a caller resetting its own
-   * session bookkeeping (e.g. an in-app replay reusing this same instance) where a guard armed
-   * for the just-ended session must not carry over and swallow the new session's first play. */
-  resetGuard(): void {
-    this.clearGuard();
-  }
-
   /** `resume: false` keeps the player visually paused after the seek (arms the guard, and if the
    * player was ENDED, unsticks it with a swallowed playVideo()). `resume: true` seeks and ensures
    * playback actually continues, reporting the result as a real play. */

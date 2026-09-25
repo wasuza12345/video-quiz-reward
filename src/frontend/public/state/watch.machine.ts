@@ -80,12 +80,7 @@ export interface WatchState {
   phase: Phase;
   session: SessionSnapshot | null;
   points: { total: number | null; unavailable: boolean };
-  // freshSession: true only for the seek that follows a brand-new SESSION_LOADED (a real reload or
-  // an in-app replay). WatchPage's seek effect uses it to reset any stale autoplay guard from the
-  // just-ended previous session right before issuing this seek — a single call doing reset-then-arm
-  // atomically, instead of a separate effect racing the seek on declaration order. See
-  // watch-page-fresh-session-seek.test.tsx.
-  seekRequest: { toSec: number; resume: boolean; freshSession: boolean } | null;
+  seekRequest: { toSec: number; resume: boolean } | null;
   toast: ToastRequest | null;
   showReplayBanner: boolean;
   // Lives outside Phase (unlike a quiz/claiming/rewarded-only field) because it must survive a
@@ -185,7 +180,7 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
         reloadingInPlace: false,
         // Always seek, even to 0 — an in-app replay reuses the same player instance, still
         // sitting at ENDED, so an explicit seekTo(0) is what unsticks Play.
-        seekRequest: { toSec: s.positionSec, resume: phase.kind === "playing", freshSession: true },
+        seekRequest: { toSec: s.positionSec, resume: phase.kind === "playing" },
       };
     }
 
@@ -225,7 +220,7 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
       return {
         ...withPosition,
         phase: resyncPhaseForServerState(action.state, null),
-        seekRequest: { toSec: action.positionSec, resume: action.state === "PLAYING", freshSession: false },
+        seekRequest: { toSec: action.positionSec, resume: action.state === "PLAYING" },
         toast: requestToast("resync", copy.toast.gateFallback),
       };
     }
@@ -250,7 +245,7 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
       return {
         ...state,
         session: { ...state.session, positionSec: action.positionSec, furthestSec: action.furthestSec },
-        seekRequest: { toSec: action.positionSec, resume: state.phase.kind === "playing", freshSession: false },
+        seekRequest: { toSec: action.positionSec, resume: state.phase.kind === "playing" },
         toast: action.jumpSec >= 2 ? requestToast("resync", copy.toast.resync) : state.toast,
       };
     }
@@ -265,13 +260,13 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
         ...state,
         session,
         phase,
-        seekRequest: { toSec: action.positionSec, resume: phase.kind === "playing", freshSession: false },
+        seekRequest: { toSec: action.positionSec, resume: phase.kind === "playing" },
         toast: requestToast("resync", copy.toast.resync),
       };
     }
 
     case "CLIENT_SEEK_GUARD":
-      return { ...state, seekRequest: { toSec: action.furthestSec, resume: state.phase.kind === "playing", freshSession: false }, toast: requestToast("resync", copy.toast.resync) };
+      return { ...state, seekRequest: { toSec: action.furthestSec, resume: state.phase.kind === "playing" }, toast: requestToast("resync", copy.toast.resync) };
 
     case "SEEK_CONSUMED":
       return { ...state, seekRequest: null };
@@ -326,7 +321,7 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
       return {
         ...state,
         phase: { kind: "playing" },
-        seekRequest: { toSec: action.seekTo, resume: true, freshSession: false },
+        seekRequest: { toSec: action.seekTo, resume: true },
         inlineNotice: "ended_fallback",
       };
 

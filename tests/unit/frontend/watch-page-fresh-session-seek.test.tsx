@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 //
 // Pins the invariant that replaces the old resetGuard()-vs-pendingSeekTo effect-order test: a
-// fresh session's own seek (state.seekRequest.freshSession, set on SESSION_LOADED) must still
-// swallow a spurious autoplay-after-seek PLAYING, even though the PREVIOUS session on this same
-// player instance already left the guard armed (its own seekTo(x, {resume:false})). WatchPage's
-// seek effect now does `if (freshSession) player.resetGuard(); player.seekTo(...)` as a single
-// call — reset-then-arm happening atomically in one place — instead of a separate resetGuard()
-// effect whose correctness depended on running before the seek effect in source declaration
-// order. If resetGuard() ran AFTER seekTo() instead (the old bug this test's predecessor pinned
-// via call order), it would silently clear the guard seekTo() just armed for the NEW session,
-// letting a spurious autoplay leak through as a real, written PLAY.
+// fresh session's own seek must still swallow a spurious autoplay-after-seek PLAYING, even though
+// the PREVIOUS session on this same player instance already left the guard armed (its own
+// seekTo(x, {resume:false})). YouTubePlayerAdapter.seekTo() always arms or clears the guard itself
+// (resume:false arms it with a fresh backstop timer, resume:true clears it) — it never leaves the
+// guard as whatever a prior seek left it — so a fresh session's own seek is safe by construction,
+// with no separate reset step needed. (An earlier version of this fix added a WatchPage-level
+// `player.resetGuard()` call before the seek, on the theory that a declaration-order hazard
+// between two effects needed guarding against; the reviewer found that mutant equivalent —
+// seekTo() already overwrites the guard unconditionally — so it was removed as redundant state,
+// and resetGuard() was removed from the adapter entirely along with its own unit test.)
 //
 // Drives a real end -> claim -> in-app replay flow (no reload) so the SAME YT.Player instance
 // carries the guard across both sessions — same setup as watch-page-replay-restart.test.tsx.
@@ -159,8 +160,8 @@ describe("WatchPage: a fresh session's seek still swallows a spurious PLAYING, e
     expect(rewatchButton, "the reward card's rewatch button must be present").toBeTruthy();
 
     act(() => rewatchButton!.click()); // handleReplay: dispatch(REPLAY_REQUESTED) + loadSession()
-    await flush(); // createSession(#2, REPLAY) resolves -> SESSION_LOADED (freshSession seek to 0, resume:false)
-    await flush(); // seek effect: resetGuard() then seekTo(0, {resume:false}) — SAME player instance, no remount
+    await flush(); // createSession(#2, REPLAY) resolves -> SESSION_LOADED (seekRequest: toSec 0, resume:false)
+    await flush(); // seek effect: seekTo(0, {resume:false}) re-arms the guard — SAME player instance, no remount
     await flush();
 
     expect(FakePlayer.instances, "the SAME player instance must be reused, not recreated (no reload happened)").toHaveLength(1);

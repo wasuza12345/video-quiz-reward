@@ -290,16 +290,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   // --- apply a reducer-requested seek, then resume playback if we're meant to be playing —
   // otherwise stay paused. The adapter owns the ENDED-unstick quirk (seekTo() alone is a no-op
-  // once ENDED) and the autoplay-after-seek guard for the "stay paused" case.
-  //
-  // freshSession (set only for the seek that follows a brand-new SESSION_LOADED) resets any stale
-  // autoplay guard from the just-ended previous session — an in-app replay reuses the same player
-  // instance, still possibly guard-armed from its own pendingSeekTo-to-0 seek — right before this
-  // same call issues the new seek, so reset-then-arm happens atomically in one place instead of
-  // depending on effect declaration order. See watch-page-fresh-session-seek.test.tsx. ---
+  // once ENDED) and the autoplay-after-seek guard for the "stay paused" case: seekTo() always
+  // arms or clears the guard itself (never leaves it as whatever a prior session's seek left it),
+  // so a fresh session's own seek is safe even if the previous session on this same player
+  // instance (an in-app replay reuses it) left the guard armed. See
+  // watch-page-fresh-session-seek.test.tsx. ---
   useEffect(() => {
     if (!state.seekRequest || !player) return;
-    if (state.seekRequest.freshSession) player.resetGuard();
     player.seekTo(state.seekRequest.toSec, { resume: state.seekRequest.resume });
     dispatch({ type: "SEEK_CONSUMED" });
   }, [state.seekRequest, player]);
