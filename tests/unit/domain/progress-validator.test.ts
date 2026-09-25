@@ -175,13 +175,25 @@ describe("§5 soft-reject flagging", () => {
   const speeding = (s: SessionSnapshot, t: number): SessionSnapshot =>
     applyClientEvents(s, NO_QUIZ, [ev("TICK", s.furthestSec + 1.4)], at(t)).session;
 
-  it("SPEED_EXCEEDED and NOT_WATCHED each add 1; flagged at 3, not before", () => {
+  it("SPEED_EXCEEDED adds 1 each time; flagged at 3, not before", () => {
+    let s = playing({ furthestSec: 10, positionSec: 10, bankSec: 0 });
+    s = speeding(s, 0);
+    s = speeding(s, 0);
+    expect(s).toMatchObject({ softRejectCount: 2, flagged: false });
+    s = speeding(s, 0);
+    expect(s).toMatchObject({ softRejectCount: 3, flagged: true });
+  });
+
+  // NOT_WATCHED deliberately never counts (planner review round 4, BLOCKER #3): an honest
+  // client-side bug could re-fire it many times for one real session — flagging on it punished
+  // the honest viewer, not a cheater. Kept separate from the SPEED_EXCEEDED-only case above.
+  it("NOT_WATCHED never adds to softRejectCount or flags, even after SPEED_EXCEEDED is already close to the threshold", () => {
     let s = playing({ furthestSec: 10, positionSec: 10, bankSec: 0 });
     s = speeding(s, 0);
     s = speeding(s, 0);
     expect(s).toMatchObject({ softRejectCount: 2, flagged: false });
     s = applyClientEvents(s, NO_QUIZ, [ev("ENDED", 10)], at(0)).session;
-    expect(s).toMatchObject({ softRejectCount: 3, flagged: true });
+    expect(s).toMatchObject({ softRejectCount: 2, flagged: false });
   });
 
   it("QUIZ_REQUIRED, INVALID_TRANSITION and BATCH_ABORTED do not count", () => {

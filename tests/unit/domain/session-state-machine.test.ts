@@ -151,10 +151,21 @@ describe("§5 transition table", () => {
     expect(s).toMatchObject({ state: "ENDED", endedAt: at(0), lastPlayingAt: null });
   });
 
-  it.each<SessionState>(["PLAYING", "PAUSED"])("%s + ENDED when not canEnd → rejected NOT_WATCHED, softRejectCount += 1", (state) => {
+  it.each<SessionState>(["PLAYING", "PAUSED"])("%s + ENDED when not canEnd → rejected NOT_WATCHED, but never counts as a soft reject (planner review round 4, BLOCKER #3)", (state) => {
+    // NOT_WATCHED deliberately excluded from SOFT_REJECT_REASONS: an honest client-side seek-
+    // back/recovery bug can re-fire it many times for one real session (dev.db: ~110 in a row),
+    // unlike SPEED_EXCEEDED, which only fires once per genuine cheat attempt. Flagging on it
+    // punished the honest viewer, not a cheater.
     const { s, rec } = one(session({ state, lastPlayingAt: state === "PLAYING" ? T0 : null, passedQuestionIds: ["q1"], furthestSec: 30, playedWallSec: 30 }), ev("ENDED", 44));
     expect(rec).toMatchObject({ accepted: false, rejectReason: "NOT_WATCHED", toState: state });
-    expect(s).toMatchObject({ state, softRejectCount: 1, flagged: false, endedAt: null });
+    expect(s).toMatchObject({ state, softRejectCount: 0, flagged: false, endedAt: null });
+  });
+
+  it("many repeated NOT_WATCHED rejections in a row never flag the session (the exact production bug: ~110 in a row)", () => {
+    const start = session({ state: "PLAYING", lastPlayingAt: T0, passedQuestionIds: ["q1"], furthestSec: 30, playedWallSec: 30 });
+    const r = applyClientEvents(start, VIDEO, Array.from({ length: 110 }, () => ev("ENDED", 44)), at(0));
+    expect(r.events.every((e) => e.rejectReason === "NOT_WATCHED")).toBe(true);
+    expect(r.session).toMatchObject({ softRejectCount: 0, flagged: false });
   });
 
   it.each<[SessionState, ClientEventType]>([

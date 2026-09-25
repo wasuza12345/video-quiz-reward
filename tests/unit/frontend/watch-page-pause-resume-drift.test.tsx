@@ -194,6 +194,12 @@ describe("WatchPage + real WatchTracker: pause/resume drift (planner review roun
     act(() => toggleButton().click()); // the initial, real user Play — starts DriftingPlayer's own clock
     await flush(); // PLAYING -> PLAY_CLICKED -> status "playing" -> tracker's rAF loop starts (active === true)
 
+    // Baseline, not 0: SESSION_LOADED now always seeks to positionSec (including 0) so an in-app
+    // replay of the same video restarts a reused, still-ENDED player (planner review round 3,
+    // "replay restarts from 0") — a fresh player's own one-time seekTo(0, true) on session load
+    // is expected and unrelated to the anti-cheat concern this test covers.
+    const baselineSeekToCallCount = player!.seekToCallCount;
+
     for (let cycle = 0; cycle < 5; cycle++) {
       act(() => toggleButton().click()); // pause — settles cleanly; the +0.27s creep stays hidden
       await flush();
@@ -202,7 +208,7 @@ describe("WatchPage + real WatchTracker: pause/resume drift (planner review roun
       await wait(150); // a beat while genuinely paused
       act(() => toggleButton().click()); // resume — reveals the +0.27s creep via this PLAYING read
       await flush();
-      expect(player!.seekToCallCount, `cycle ${cycle}: no corrective seekTo() right after resuming`).toBe(0);
+      expect(player!.seekToCallCount - baselineSeekToCallCount, `cycle ${cycle}: no corrective seekTo() right after resuming`).toBe(0);
 
       // Every honest frame from here needs to be tracked normally, not left stuck in onFrame's
       // "not yet trusted" middle band. If the resume's drift wasn't absorbed (the PLAYING-side
@@ -216,7 +222,7 @@ describe("WatchPage + real WatchTracker: pause/resume drift (planner review roun
       await flush();
     }
 
-    expect(player!.seekToCallCount, "no CLIENT_SEEK_GUARD corrective seekTo() call at any point").toBe(0);
+    expect(player!.seekToCallCount - baselineSeekToCallCount, "no CLIENT_SEEK_GUARD corrective seekTo() call at any point").toBe(0);
     expect(resyncToastVisible(), "no resync toast at any point").toBe(false);
   }, 30_000);
 });

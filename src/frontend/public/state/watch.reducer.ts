@@ -164,10 +164,17 @@ export function watchReducer(state: WatchState, action: WatchAction): WatchState
         claimError: false,
         inlineNotice: null,
         error: null,
-        // A resumed/reloaded session starts the player at 0 unless we explicitly seek it — the
-        // player only picks this up once it's ready (WatchPage's pendingSeekTo effect guards on
-        // `player` being non-null, so it naturally waits and fires once, review MAJOR).
-        pendingSeekTo: s.positionSec > 0 ? s.positionSec : null,
+        // Always seek, even to 0 — WatchPage's pendingSeekTo effect guards on `player` being
+        // non-null, so it naturally waits and fires once (review MAJOR). Skipping the seek when
+        // positionSec was 0 used to assume a fresh player always already sits at 0 on its own,
+        // which is true after a real page reload (a brand-new iframe cues to 0) but false for an
+        // in-app replay of the SAME video with no reload: useYouTubePlayer's effect depends only
+        // on [youtubeId, title], so it never reruns and the SAME player instance is reused —
+        // still sitting at ENDED, at the old video's duration. Without an explicit seekTo(0), the
+        // display read the stale position (e.g. showing 0:44/0:44, bar full) and Play did
+        // nothing: YouTube doesn't resume playback from an ENDED player without a seek first
+        // (planner review: "replay restarts from 0").
+        pendingSeekTo: s.positionSec,
       };
     }
 

@@ -47,9 +47,14 @@ describe("SESSION_LOADED — derives the starting status from server state (spec
     expect(s.pendingSeekTo).toBe(6.9);
   });
 
-  it("review MAJOR: a brand new session (positionSec 0) sets no pending seek", () => {
+  it("planner review (replay restarts from 0): a brand new session (positionSec 0) still seeks to 0, not null", () => {
+    // Was previously conditional on positionSec > 0, on the assumption a fresh player already
+    // sits at 0 on its own — true after a real reload, false for an in-app replay of the same
+    // video: useYouTubePlayer's effect never reruns, so the SAME player instance is reused, still
+    // sitting at ENDED at the old duration. Without an explicit seekTo(0), Play was a silent
+    // no-op (YouTube doesn't resume from ENDED without a seek first).
     const s = run([{ type: "SESSION_LOADED", session: session() }]);
-    expect(s.pendingSeekTo).toBeNull();
+    expect(s.pendingSeekTo).toBe(0);
   });
 
   it("review MAJOR: a resumed QUIZ_PENDING session also seeks to its (nonzero) position, not just PAUSED", () => {

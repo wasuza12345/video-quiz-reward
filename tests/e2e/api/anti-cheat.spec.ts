@@ -58,7 +58,7 @@ test("forged TICKs: over the bank is soft SPEED_EXCEEDED, far over is hard SEEK_
   expect(afterSecond.flagged).toBe(true);
 });
 
-test("ENDED before 0.9×duration of real play time is rejected (NOT_WATCHED)", async ({ request }) => {
+test("ENDED before 0.9×duration of real play time is rejected (NOT_WATCHED), but never soft-flags the session", async ({ request }) => {
   const user = new UserSession(request);
   const { sessionId } = await freshCheatSession(user);
 
@@ -68,8 +68,13 @@ test("ENDED before 0.9×duration of real play time is rejected (NOT_WATCHED)", a
   expect(body.results[0]).toMatchObject({ accepted: false, rejectReason: "NOT_WATCHED" });
   expect(body.state, "a rejected ENDED must not move the session to ENDED").not.toBe("ENDED");
 
+  // NOT_WATCHED deliberately never counts as a soft reject (planner review round 4, BLOCKER #3):
+  // an honest client-side seek-back/recovery bug could re-fire it many times for one real
+  // session (dev.db: ~110 in a row), unlike SPEED_EXCEEDED, which only fires once per genuine
+  // cheat attempt — flagging on it punished the honest viewer, not a cheater.
   const flags = await readSessionFlags(sessionId);
-  expect(flags.softRejectCount).toBeGreaterThanOrEqual(1);
+  expect(flags.softRejectCount).toBe(0);
+  expect(flags.flagged).toBe(false);
 });
 
 test("claiming without an ENDED session is rejected (422 NOT_ENDED)", async ({ request }) => {

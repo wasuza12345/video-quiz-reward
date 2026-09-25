@@ -45,6 +45,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   const playedWallSecRef = useRef(0);
   const claimAttemptedRef = useRef<string | null>(null);
+  // Caps ENDED_NOT_WATCHED recovery retries (planner review round 4, BLOCKER #2): a real ENDED
+  // transition after a seek-back that didn't move the player far enough re-fires ENDED almost
+  // immediately, and without a cap, that loop can repeat for as long as the tab stays open (found
+  // in dev.db: ~110 ENDED sends ~80ms apart, softRejectCount 107 — see MAX_ENDED_RECOVERY_ATTEMPTS
+  // below). Reset on every fresh session.
+  const endedRecoveryAttemptsRef = useRef(0);
+  const MAX_ENDED_RECOVERY_ATTEMPTS = 3;
   // Guards the initial mount's /api/me + /api/sessions calls against StrictMode's dev-only
   // double-invoke of effects (review MINOR 2) — keyed on videoId (not just a boolean) so a
   // genuine videoId change still loads. handleReplay/handleRetry call loadSession() directly
@@ -75,12 +82,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
     const t = setTimeout(() => dispatch({ type: "LOADING_SLOW" }), 8000);
     return () => clearTimeout(t);
   }, [state.status]);
-
-  // --- resets that follow a fresh session ---
-  useEffect(() => {
-    playedWallSecRef.current = 0;
-    claimAttemptedRef.current = null;
-  }, [state.sessionId]);
 
   // --- local wall-clock estimate of PLAYING time, for the ENDED fallback's seek formula only
   // (the server's own playedWallSec is authoritative and isn't returned to the client) ---
@@ -186,6 +187,28 @@ export function WatchPage({ videoId }: WatchPageProps) {
     };
   }, []);
 
+  // --- resets that follow a fresh session — including an in-app replay of the same video, which
+  // reuses the existing player instance rather than remounting it (planner review: "replay
+  // restarts from 0"). autoResuming/the autoplay guard are otherwise only ever cleared by a
+  // player state change or their own backstop timers, none of which fire on a session swap by
+  // itself — stale from the just-ended previous session, they'd wrongly keep the just-armed
+  // pendingSeekTo-to-0 guard (or a stuck autoResuming) around into the new one. ---
+  useEffect(() => {
+    playedWallSecRef.current = 0;
+    claimAttemptedRef.current = null;
+    endedRecoveryAttemptsRef.current = 0;
+    clearAutoplayGuard();
+    clearAutoResumingBackstop();
+  }, [state.sessionId, clearAutoplayGuard, clearAutoResumingBackstop]);
+  // autoResuming reset via React's documented "adjust state during render" pattern (not an effect
+  // — a synchronous setState in an effect body is a lint error; a ref read during render is too —
+  // and this way never even paints the stale value for a frame).
+  const [autoResumingSessionId, setAutoResumingSessionId] = useState(state.sessionId);
+  if (autoResumingSessionId !== state.sessionId) {
+    setAutoResumingSessionId(state.sessionId);
+    if (autoResuming) setAutoResuming(false);
+  }
+
   // --- player state changes drive both the reducer and the server write (plan §6) ---
   useEffect(() => {
     handleStateChangeRef.current = (ytState: number) => {
@@ -227,14 +250,23 @@ export function WatchPage({ videoId }: WatchPageProps) {
       } else if (ytState === YT_PLAYER_STATE.ENDED) {
         clearAutoplayGuard();
         clearAutoResumingBackstop();
+        // A prior NOT_WATCHED recovery's seek-back can itself land close enough to the true end
+        // that the player immediately re-fires ENDED — without a cap this becomes a tight loop
+        // (dev.db: ~110 ENDED sends ~80ms apart, each one also counting as a soft reject — see
+        // BLOCKER #3). Give up silently after a few attempts instead of hammering the server.
+        if (endedRecoveryAttemptsRef.current >= MAX_ENDED_RECOVERY_ATTEMPTS) return;
         dispatch({ type: "VIDEO_ENDED" });
         const durationSec = state.video?.durationSec ?? 0;
         void writer.sendImmediate("ENDED", currentTime).then((result) => {
           if (!result) return;
           if (result.state === "ENDED") {
+            endedRecoveryAttemptsRef.current = 0;
             dispatch({ type: "ENDED_ACCEPTED" });
           } else {
-            const seekTo = Math.max(0, result.furthestSec - (0.9 * durationSec - playedWallSecRef.current));
+            endedRecoveryAttemptsRef.current += 1;
+            // Never seek the recovery forward past the server's own verified furthest — landing
+            // back at/near the end again is exactly what re-triggers the loop above.
+            const seekTo = Math.min(result.furthestSec, Math.max(0, result.furthestSec - (0.9 * durationSec - playedWallSecRef.current)));
             dispatch({ type: "ENDED_NOT_WATCHED", seekTo });
           }
         });
@@ -255,8 +287,19 @@ export function WatchPage({ videoId }: WatchPageProps) {
         player.playVideo();
       }
     } else {
+      // Confirmed against real Chrome (planner review round 4: "replay restarts from 0" / a
+      // fresh page load starting at the old end position — the same underlying YouTube quirk):
+      // seekTo() alone is a silent no-op once the player has reached ENDED — getCurrentTime()
+      // never moves, even seconds later. playVideo(), called in the SAME synchronous pass right
+      // after it, is what unsticks it. The ENDED check must happen BEFORE seekTo() — reading
+      // getPlayerState() right AFTER it is itself unreliable (also confirmed against real
+      // Chrome). Only done when actually ENDED: an unconditional playVideo() here would also
+      // nudge a normal (non-ended) paused/quiz_open resume, which doesn't need it and previously
+      // never did one.
+      const wasEnded = player.getPlayerState() === YT_PLAYER_STATE.ENDED;
       armAutoplayGuard();
       player.seekTo(state.pendingSeekTo, true);
+      if (wasEnded) player.playVideo();
     }
     dispatch({ type: "SEEK_CONSUMED" });
   }, [state.pendingSeekTo, state.status, player, armAutoplayGuard, clearAutoplayGuard]);
@@ -308,7 +351,17 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // --- tab hidden: pause + a best-effort TAB_HIDDEN send when nothing else is in flight ---
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState !== "hidden" || !player) return;
+      // Gated on status === "playing", matching the reducer's own TAB_HIDDEN guard — calling
+      // player.pauseVideo() unconditionally used to pause the REAL player even while, say, the
+      // quiz modal was open waiting on the 900ms auto-resume timer (status "quiz_open", not
+      // "playing" yet). That pause and the auto-resume's own later playVideo() could then race:
+      // if the (now-stale) PAUSED event from this pause arrived AFTER the auto-resume's PLAYING
+      // one, PAUSE_CLICKED's own guard (only "status !== playing" — no staleness check) would
+      // wrongly flip status back to "paused" with no real pause ever having been issued for that,
+      // permanently stopping useWatchTracker's rAF/TICK loop while the real player kept playing
+      // (found in dev.db: 30s with zero TICKs after an honest answer — planner review round 4,
+      // BLOCKER #1). Nothing meaningful to pause here anyway while not "playing".
+      if (document.visibilityState !== "hidden" || !player || state.status !== "playing") return;
       const currentTime = player.getCurrentTime();
       dispatch({ type: "TAB_HIDDEN" });
       player.pauseVideo();
@@ -316,7 +369,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [player, writer]);
+  }, [player, writer, state.status]);
 
   const handleToggle = useCallback(() => {
     if (!player || !selectPlayButtonEnabled(state) || autoResuming) return;
@@ -372,7 +425,16 @@ export function WatchPage({ videoId }: WatchPageProps) {
   const currentQuestion = selectCurrentQuestion(state);
   const questionNumber = currentQuestion ? state.quizzes.findIndex((q) => q.id === currentQuestion.id) + 1 : 0;
   const isPlaying = selectIsPlaying(state);
-  const isLoading = state.status === "loading";
+  // reloadingInPlace (an in-app replay, no page reload — REPLAY_REQUESTED) must NOT show the
+  // loading skeleton in place of <VideoPlayer>: useYouTubePlayer's effect depends only on
+  // [youtubeId, title], so a same-video replay never reruns it and reuses the existing player
+  // instance — but swapping <VideoPlayer> out for <Skeleton>, even briefly, unmounts the DOM
+  // node YT.Player replaced with its iframe. `player` (React state) is then left pointing at that
+  // now-detached iframe, whose postMessage commands (seekTo/playVideo) silently go nowhere once
+  // <VideoPlayer> remounts with a NEW container div — confirmed against real Chrome: this, not
+  // the seekTo-alone-on-ENDED quirk, was the actual reason the replay fix still failed in the
+  // human's browser (planner review round 4: "replay restarts from 0").
+  const isLoading = state.status === "loading" && !state.reloadingInPlace;
 
   return (
     <>

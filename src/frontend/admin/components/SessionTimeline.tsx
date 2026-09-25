@@ -9,8 +9,12 @@ import { formatTime, sessions as copy } from "../constants/copy.th";
 import { formatMmSsTenths } from "../lib/time";
 import type { AdminSessionEventRow } from "@/shared/contracts/admin";
 
+// FLAG_WORTHY is visual only (which individual reject reasons get the red chip/border) — kept
+// wider than SOFT_REJECT_REASONS deliberately: NOT_WATCHED is still worth an admin's attention
+// per-event even though it no longer contributes to the session-level `flagged` threshold below
+// (planner review round 4, BLOCKER #3 — see shared/constants/session.ts's own SOFT_REJECT_REASONS).
 const FLAG_WORTHY = new Set(["SEEK_FORWARD", "SPEED_EXCEEDED", "NOT_WATCHED"]);
-const SOFT_REJECT_REASONS = new Set(["SPEED_EXCEEDED", "NOT_WATCHED"]);
+const SOFT_REJECT_REASONS = new Set(["SPEED_EXCEEDED"]);
 const SOFT_REJECT_FLAG_AT = 3;
 
 export type TimelineRow = { kind: "event"; event: AdminSessionEventRow } | { kind: "tick-group"; id: string; events: AdminSessionEventRow[] };
@@ -20,7 +24,7 @@ function sortedEvents(events: AdminSessionEventRow[]): AdminSessionEventRow[] {
 }
 
 /** The event that flipped `flagged` to true: the first SEEK_FORWARD, or the 3rd soft reject
- * (SPEED_EXCEEDED/NOT_WATCHED) — mirrors backend/domain/session-state-machine.ts's `reject()`.
+ * (SPEED_EXCEEDED only) — mirrors backend/domain/session-state-machine.ts's `reject()`.
  * Exported for tests/unit/frontend/session-timeline.test.ts. */
 export function findFlagTriggerEventId(events: AdminSessionEventRow[]): number | null {
   let softCount = 0;
