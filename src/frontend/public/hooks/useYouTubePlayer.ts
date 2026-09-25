@@ -96,12 +96,16 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
   });
 
   useEffect(() => {
+    if (!youtubeId || !containerRef.current) return;
     let cancelled = false;
     let instance: YTPlayer | null = null;
 
     loadYouTubeIframeApi()
       .then((YT) => {
-        if (cancelled || !containerRef.current) return;
+        // Idempotency guard: never create a second player on a container that already has one
+        // (defence in depth against any future refactor that decouples this effect's cleanup
+        // from its own re-run — review round, planner lead (b)).
+        if (cancelled || !containerRef.current || containerRef.current.querySelector("iframe")) return;
         instance = new YT.Player(containerRef.current, {
           videoId: youtubeId,
           playerVars: {

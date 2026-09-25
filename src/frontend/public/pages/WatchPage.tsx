@@ -109,12 +109,25 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // can't race the auto-resume's own seek/play and produce a spurious backward jump (MINOR 3).
   const [autoResuming, setAutoResuming] = useState(false);
 
+  // Armed by the resume-seek effect below whenever the resumed/reloaded session should stay
+  // paused. YouTube's seekTo() on a freshly-cued player can silently resume playback on its own
+  // — no playVideo() call of ours involved — which let a reloaded session run unattended straight
+  // through the quiz gate (found in P6b browser E2E: the Play button ends up permanently disabled
+  // because status jumps to "quiz_open" behind the user's back). A ref, not state: it's read only
+  // from the imperative onStateChange/handleToggle callbacks, never rendered.
+  const suppressAutoplayAfterSeekRef = useRef(false);
+
   // --- player state changes drive both the reducer and the server write (plan §6) ---
   useEffect(() => {
     handleStateChangeRef.current = (ytState: number) => {
       if (!player) return;
       const currentTime = player.getCurrentTime();
       if (ytState === YT_PLAYER_STATE.PLAYING) {
+        if (suppressAutoplayAfterSeekRef.current) {
+          suppressAutoplayAfterSeekRef.current = false;
+          player.pauseVideo();
+          return;
+        }
         setAutoResuming(false);
         dispatch({ type: "PLAY_CLICKED" });
         void writer.sendImmediate("PLAY", currentTime);
@@ -142,11 +155,18 @@ export function WatchPage({ videoId }: WatchPageProps) {
   });
 
   // --- apply a reducer-requested seek, then resume playback if we're meant to be playing (and
-  // aren't already — avoids a redundant playVideo() call while one is already in progress) ---
+  // aren't already — avoids a redundant playVideo() call while one is already in progress);
+  // otherwise arm the guard above, since seekTo() alone can make the player start playing on its
+  // own (review MAJOR) ---
   useEffect(() => {
     if (state.pendingSeekTo === null || !player) return;
-    player.seekTo(state.pendingSeekTo, true);
-    if (state.status === "playing" && player.getPlayerState() !== YT_PLAYER_STATE.PLAYING) player.playVideo();
+    if (state.status === "playing") {
+      player.seekTo(state.pendingSeekTo, true);
+      if (player.getPlayerState() !== YT_PLAYER_STATE.PLAYING) player.playVideo();
+    } else {
+      suppressAutoplayAfterSeekRef.current = true;
+      player.seekTo(state.pendingSeekTo, true);
+    }
     dispatch({ type: "SEEK_CONSUMED" });
   }, [state.pendingSeekTo, state.status, player]);
 
@@ -206,7 +226,11 @@ export function WatchPage({ videoId }: WatchPageProps) {
   const handleToggle = useCallback(() => {
     if (!player || !selectPlayButtonEnabled(state) || autoResuming) return;
     if (state.status === "playing") player.pauseVideo();
-    else player.playVideo();
+    else {
+      // A real user gesture always wins over the seek-guard above, in case it's still armed.
+      suppressAutoplayAfterSeekRef.current = false;
+      player.playVideo();
+    }
   }, [player, state, autoResuming]);
 
   const handleChoice = useCallback(
