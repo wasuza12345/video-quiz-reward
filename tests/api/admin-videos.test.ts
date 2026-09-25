@@ -106,7 +106,7 @@ describe("admin video CRUD (plan §4.4/§4.5/§7)", () => {
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
 
-  it("duplicate youtubeId → 400 VALIDATION_ERROR", async () => {
+  it("duplicate youtubeId → 400 VALIDATION_ERROR, with an issues[].message the admin UI can tell apart from a plain invalid link", async () => {
     const admin = await loggedInAdmin();
     const cookie = await issueCookie(admin.id);
     const body = { youtubeUrl: randomYoutubeId(), durationSec: 30, rewardPoints: 10 };
@@ -114,7 +114,11 @@ describe("admin video CRUD (plan §4.4/§4.5/§7)", () => {
     expect(first.status).toBe(200);
     const second = await createVideo(adminRequest(VIDEOS_URL, { body, adminCookie: cookie }));
     expect(second.status).toBe(400);
-    expect((await second.json()).error.code).toBe("VALIDATION_ERROR");
+    const secondBody = await second.json();
+    expect(secondBody.error.code).toBe("VALIDATION_ERROR");
+    // AdminVideoFormPage's youtubeUrlIssueMessage keys off this exact string to show a
+    // "already added" copy instead of the generic invalid-link one (tester audit MINOR 1).
+    expect(secondBody.error.issues).toEqual([{ path: "youtubeUrl", message: "already added" }]);
   });
 
   it("rewardPoints out of the 1-1000 range → 400 VALIDATION_ERROR", async () => {

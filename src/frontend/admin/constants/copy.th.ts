@@ -71,7 +71,7 @@ export const videoForm = {
   editTitle: "แก้ไขวิดีโอ",
   backAriaLabel: "กลับไปหน้ารายการวิดีโอ",
   fields: {
-    youtubeUrl: { label: "ลิงก์ YouTube", helper: "วางลิงก์ เช่น https://youtu.be/…", error: "ลิงก์ YouTube ไม่ถูกต้อง" },
+    youtubeUrl: { label: "ลิงก์ YouTube", helper: "วางลิงก์ เช่น https://youtu.be/…", error: "ลิงก์ YouTube ไม่ถูกต้อง", duplicateError: "คลิปนี้ถูกเพิ่มไว้แล้วค่ะ" },
     title: { label: "ชื่อคลิป", helperCreate: "เว้นว่างไว้เพื่อใช้ชื่อจาก YouTube" },
     channelName: (name: string) => `จาก YouTube: ${name}`,
     durationSec: { label: "ความยาว", helper: "ดึงจากตัวอย่างอัตโนมัติ", error: "ยังอ่านความยาวคลิปไม่ได้ กรุณารอตัวอย่างโหลดเสร็จค่ะ" },

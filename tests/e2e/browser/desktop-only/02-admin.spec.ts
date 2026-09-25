@@ -79,6 +79,8 @@ test("create video → publish → feature → shows on / → session timeline �
 });
 
 async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitle: string, briefVideoId: string, consoleErrors: string[]): Promise<void> {
+  let createdVideoUrl = "";
+
   await test.step("create a video from a YouTube URL", async () => {
     await page.goto("/admin/videos/new");
     // The preview player only mounts once youtubeUrl parses to an id — fill it first.
@@ -98,6 +100,26 @@ async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitl
     // "/admin/videos/new" itself matches a naive `[^/]+$` pattern — require a real id (uuid).
     // Generous timeout: saving hits the real youtube.com oEmbed server-side (plan §7).
     await page.waitForURL(/\/admin\/videos\/[0-9a-f-]{20,}$/, { timeout: 40_000 });
+    createdVideoUrl = page.url();
+  });
+
+  await test.step("creating another video with the same YouTube link shows the duplicate copy, not the generic invalid-link one (tester audit MINOR 1)", async () => {
+    await page.goto("/admin/videos/new");
+    await page.getByLabel("ลิงก์ YouTube").fill(`https://youtu.be/${ADMIN_TEST_VIDEO_YOUTUBE_ID}`);
+    await waitForWindowPlayer(page);
+    await waitForPlayerDuration(page);
+    await expect(page.getByLabel("ความยาว")).not.toHaveValue("", { timeout: 10_000 });
+    await page.getByLabel("ชื่อคลิป").fill(`${videoTitle} (duplicate attempt)`);
+
+    await resetWindowPlayer(page);
+    await page.getByRole("button", { name: "บันทึกและเพิ่มคำถาม" }).click();
+    await expect(page.getByText("คลิปนี้ถูกเพิ่มไว้แล้วค่ะ"), "must show the duplicate copy, not the generic invalid-link one").toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("ลิงก์ YouTube ไม่ถูกต้อง"), "must not show the generic invalid-link copy for a duplicate").not.toBeVisible();
+    expect(page.url(), "a rejected save must not navigate away").toContain("/admin/videos/new");
+
+    // Back to the video this flow actually owns — the rest of the flow expects to be there.
+    // A real navigation (not router.push), so window.__ytPlayer is already gone on its own.
+    await page.goto(createdVideoUrl);
   });
 
   await test.step('add a question using "ใช้เวลาปัจจุบัน"', async () => {

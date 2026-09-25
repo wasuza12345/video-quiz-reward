@@ -37,6 +37,14 @@ export function publishOrFeatureErrorMessage(err: { code: string; extra: Record<
   return copy.errors.generic;
 }
 
+/** Thai copy for a youtubeUrl save-validation issue. The server's own issue.message distinguishes
+ * "already added" (video.service.ts, a duplicate) from every other reason (invalid/unembeddable
+ * URL) — used to always map to the generic "invalid link" copy, even a duplicate (tester audit
+ * MINOR 1). Pure/exported for tests/unit/frontend/admin-video-form-errors.test.ts. */
+export function youtubeUrlIssueMessage(issueMessage: string): string {
+  return issueMessage === "already added" ? copy.fields.youtubeUrl.duplicateError : copy.fields.youtubeUrl.error;
+}
+
 export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
   const mode: "create" | "edit" = videoId ? "edit" : "create";
   const router = useRouter();
@@ -146,7 +154,7 @@ export function AdminVideoFormPage({ videoId }: { videoId?: string }) {
           const issues = (err.extra.issues as { path: string; message: string }[] | undefined) ?? [];
           const next: typeof errors = {};
           for (const issue of issues) {
-            if (issue.path === "youtubeUrl") next.youtubeUrl = copy.fields.youtubeUrl.error;
+            if (issue.path === "youtubeUrl") next.youtubeUrl = youtubeUrlIssueMessage(issue.message);
             else if (issue.path === "durationSec") next.durationSec = copy.fields.durationSec.error;
             else if (issue.path === "rewardPoints") next.rewardPoints = copy.fields.rewardPoints.error;
           }

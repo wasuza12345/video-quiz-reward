@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publishOrFeatureErrorMessage } from "@/frontend/admin/pages/AdminVideoFormPage";
+import { publishOrFeatureErrorMessage, youtubeUrlIssueMessage } from "@/frontend/admin/pages/AdminVideoFormPage";
 import { mapQuestionSaveError } from "@/frontend/admin/components/QuizEditor";
 
 describe("publishOrFeatureErrorMessage (no raw English toasts)", () => {
@@ -29,6 +29,17 @@ describe("publishOrFeatureErrorMessage (no raw English toasts)", () => {
     const message = publishOrFeatureErrorMessage({ code: "SOME_UNMAPPED_CODE", extra: {} });
     expect(message).toBe("ทำรายการไม่สำเร็จ กรุณาลองใหม่ค่ะ");
     expect(message).not.toContain("SOME_UNMAPPED_CODE");
+  });
+});
+
+describe("youtubeUrlIssueMessage (tester audit MINOR 1: a duplicate must not show the generic invalid-link copy)", () => {
+  it("maps the server's 'already added' issue message to the duplicate-clip copy", () => {
+    expect(youtubeUrlIssueMessage("already added")).toBe("คลิปนี้ถูกเพิ่มไว้แล้วค่ะ");
+  });
+
+  it("falls back to the generic invalid-link copy for every other issue message", () => {
+    expect(youtubeUrlIssueMessage("invalid YouTube URL")).toBe("ลิงก์ YouTube ไม่ถูกต้อง");
+    expect(youtubeUrlIssueMessage("video not found or not embeddable")).toBe("ลิงก์ YouTube ไม่ถูกต้อง");
   });
 });
 
