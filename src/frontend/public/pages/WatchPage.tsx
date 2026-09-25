@@ -115,7 +115,35 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // through the quiz gate (found in P6b browser E2E: the Play button ends up permanently disabled
   // because status jumps to "quiz_open" behind the user's back). A ref, not state: it's read only
   // from the imperative onStateChange/handleToggle callbacks, never rendered.
+  //
+  // One-shot: armed only for the seek it was meant for. If that seek doesn't trigger the quirk
+  // (the common case for an already-buffered, non-cued player — e.g. a TICK-overshoot clamp mid-
+  // session), the guard must not outlive it — otherwise the NEXT legitimate playVideo() (the
+  // quiz auto-resume, or a user's Play click) gets its own PLAYING event swallowed and re-paused,
+  // and — since that swallow returns before setAutoResuming(false) — autoResuming gets stuck
+  // true, permanently disabling the Play/Pause control (the same symptom, a different trigger;
+  // found by planner review after the first fix). Disarmed by: consuming a spurious PLAYING, the
+  // next PAUSED/CUED state, a ~1.5s backstop timeout, or any programmatic playVideo() we make on
+  // purpose (which always clears it first, since a real play should never be swallowed).
   const suppressAutoplayAfterSeekRef = useRef(false);
+  const suppressAutoplayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armAutoplayGuard = useCallback(() => {
+    suppressAutoplayAfterSeekRef.current = true;
+    if (suppressAutoplayTimeoutRef.current !== null) clearTimeout(suppressAutoplayTimeoutRef.current);
+    suppressAutoplayTimeoutRef.current = setTimeout(() => {
+      suppressAutoplayAfterSeekRef.current = false;
+      suppressAutoplayTimeoutRef.current = null;
+    }, 1500);
+  }, []);
+
+  const clearAutoplayGuard = useCallback(() => {
+    suppressAutoplayAfterSeekRef.current = false;
+    if (suppressAutoplayTimeoutRef.current !== null) {
+      clearTimeout(suppressAutoplayTimeoutRef.current);
+      suppressAutoplayTimeoutRef.current = null;
+    }
+  }, []);
 
   // --- player state changes drive both the reducer and the server write (plan §6) ---
   useEffect(() => {
@@ -124,14 +152,16 @@ export function WatchPage({ videoId }: WatchPageProps) {
       const currentTime = player.getCurrentTime();
       if (ytState === YT_PLAYER_STATE.PLAYING) {
         if (suppressAutoplayAfterSeekRef.current) {
-          suppressAutoplayAfterSeekRef.current = false;
+          clearAutoplayGuard();
           player.pauseVideo();
           return;
         }
         setAutoResuming(false);
         dispatch({ type: "PLAY_CLICKED" });
         void writer.sendImmediate("PLAY", currentTime);
-      } else if (ytState === YT_PLAYER_STATE.PAUSED) {
+      } else if (ytState === YT_PLAYER_STATE.PAUSED || ytState === YT_PLAYER_STATE.CUED) {
+        clearAutoplayGuard();
+        if (ytState === YT_PLAYER_STATE.CUED) return;
         setAutoResuming(false);
         // The gate-hit flow (useWatchTracker) already calls player.pauseVideo() and sends its
         // own PAUSE — skip the duplicate this onStateChange(PAUSED) would otherwise send (MINOR 4).
@@ -162,13 +192,16 @@ export function WatchPage({ videoId }: WatchPageProps) {
     if (state.pendingSeekTo === null || !player) return;
     if (state.status === "playing") {
       player.seekTo(state.pendingSeekTo, true);
-      if (player.getPlayerState() !== YT_PLAYER_STATE.PLAYING) player.playVideo();
+      if (player.getPlayerState() !== YT_PLAYER_STATE.PLAYING) {
+        clearAutoplayGuard();
+        player.playVideo();
+      }
     } else {
-      suppressAutoplayAfterSeekRef.current = true;
+      armAutoplayGuard();
       player.seekTo(state.pendingSeekTo, true);
     }
     dispatch({ type: "SEEK_CONSUMED" });
-  }, [state.pendingSeekTo, state.status, player]);
+  }, [state.pendingSeekTo, state.status, player, armAutoplayGuard, clearAutoplayGuard]);
 
   // --- auto-resume 900ms after a correct answer (row 13) ---
   useEffect(() => {
@@ -176,10 +209,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
     const t = setTimeout(() => {
       dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT" });
       setAutoResuming(true);
+      // A stale guard from an earlier non-autoplaying seek (e.g. a TICK-overshoot clamp while the
+      // quiz was open) must not swallow THIS intentional play — clear it first.
+      clearAutoplayGuard();
       player?.playVideo();
     }, 900);
     return () => clearTimeout(t);
-  }, [state.status, state.feedback, player]);
+  }, [state.status, state.feedback, player, clearAutoplayGuard]);
 
   // --- auto-claim once ended (rows 5, 18) ---
   useEffect(() => {
@@ -228,10 +264,10 @@ export function WatchPage({ videoId }: WatchPageProps) {
     if (state.status === "playing") player.pauseVideo();
     else {
       // A real user gesture always wins over the seek-guard above, in case it's still armed.
-      suppressAutoplayAfterSeekRef.current = false;
+      clearAutoplayGuard();
       player.playVideo();
     }
-  }, [player, state, autoResuming]);
+  }, [player, state, autoResuming, clearAutoplayGuard]);
 
   const handleChoice = useCallback(
     (choice: string) => {
