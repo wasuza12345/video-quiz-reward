@@ -85,7 +85,7 @@ test("4. a tampered cookie signature gets a new identity, and can't touch the ol
   }
 });
 
-test("5. matcher: /watch/* and /api/* get the cookie; /_next/static/* does not", async ({ request }) => {
+test("5. matcher: /watch/* and /api/* get the cookie; /_next/static/* does not", async () => {
   const onWatch = await playwrightRequest.newContext({ baseURL: BASE_URL });
   try {
     const res = await new UserSession(onWatch).get("/watch/some-video-id");
