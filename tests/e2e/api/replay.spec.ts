@@ -2,8 +2,8 @@
 // rewarded for this user) earns 0 points even when honestly rewatched start to finish. Uses a
 // 6s fixture video (e2e-replay) so two full honest watches only cost ~13s of real wall time.
 import { expect, test } from "@playwright/test";
-import { claim, createSession, findVideoByYoutubeId, playHonestlyTo, postEvents, UserSession, type ClaimBody, type SessionCreateBody } from "./helpers/api";
-import { REPLAY_VIDEO_DURATION_SEC, REPLAY_VIDEO_YOUTUBE_ID } from "./helpers/env";
+import { claim, createSession, findVideoByYoutubeId, playHonestlyTo, postEvents, UserSession, type ClaimBody, type SessionCreateBody } from "../helpers/api";
+import { REPLAY_VIDEO_DURATION_SEC, REPLAY_VIDEO_YOUTUBE_ID } from "../helpers/env";
 
 test.setTimeout(60_000);
 

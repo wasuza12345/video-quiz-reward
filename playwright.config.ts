@@ -40,7 +40,7 @@ export default defineConfig({
     stderr: "pipe",
   },
   projects: [
-    { name: "api", testIgnore: ["**/*.browser.spec.ts", "browser/**"] },
+    { name: "api", testDir: "./tests/e2e/api" },
     { name: "chromium", use: { ...devices["Desktop Chrome"] }, testMatch: "proxy-secure-cookie.browser.spec.ts" },
     { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: "proxy-secure-cookie.browser.spec.ts" },
     // P6b — real-browser UI specs (plan §10 full list). desktop-only/ (the honest real-iframe

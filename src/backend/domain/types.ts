@@ -1,4 +1,5 @@
 import type { ClientEventType, EventType, RejectReason, SessionState } from "@/shared/constants/session";
+import type { QuizGateQuestion } from "@/shared/rules/quiz-gate";
 
 /** The CAS-guarded fields of a WatchSession that the domain reads and writes. */
 export interface SessionSnapshot {
@@ -16,10 +17,7 @@ export interface SessionSnapshot {
   endedAt: Date | null;
 }
 
-export interface QuizGate {
-  id: string;
-  triggerSec: number;
-}
+export type QuizGate = QuizGateQuestion;
 
 export interface VideoRules {
   durationSec: number;

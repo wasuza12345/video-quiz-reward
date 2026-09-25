@@ -20,8 +20,8 @@ import {
   type ClaimBody,
   type EventsApplyBody,
   type SessionCreateBody,
-} from "./helpers/api";
-import { BRIEF_QUESTION_CORRECT_CHOICE, BRIEF_QUESTION_TRIGGER_SEC, BRIEF_VIDEO_DURATION_SEC, BRIEF_VIDEO_YOUTUBE_ID } from "./helpers/env";
+} from "../helpers/api";
+import { BRIEF_QUESTION_CORRECT_CHOICE, BRIEF_QUESTION_TRIGGER_SEC, BRIEF_VIDEO_DURATION_SEC, BRIEF_VIDEO_YOUTUBE_ID } from "../helpers/env";
 
 test.setTimeout(150_000);
 

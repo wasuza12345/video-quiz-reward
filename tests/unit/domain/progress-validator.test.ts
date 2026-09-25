@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkSeek, checkTick, creditPlayTime, nextUnpassedQuestion, quizGateAt } from "@/backend/domain/progress-validator";
+import { checkSeek, checkTick, creditPlayTime, quizGateAt } from "@/backend/domain/progress-validator";
 import { applyClientEvents } from "@/backend/domain/session-state-machine";
 import { applyResume } from "@/backend/domain/resume-policy";
 import type { ClientEvent, SessionSnapshot } from "@/backend/domain/types";
@@ -155,11 +155,6 @@ describe("§6.3 quiz gate", () => {
     { id: "late", triggerSec: 30 },
     { id: "early", triggerSec: 10 },
   ];
-  it("picks the earliest unpassed question, whatever the input order", () => {
-    expect(nextUnpassedQuestion(questions, [])?.id).toBe("early");
-    expect(nextUnpassedQuestion(questions, ["early"])?.id).toBe("late");
-    expect(nextUnpassedQuestion(questions, ["early", "late"])).toBeNull();
-  });
   it("fires at or after triggerSec only", () => {
     expect(quizGateAt(questions, [], 9.99)).toBeNull();
     expect(quizGateAt(questions, [], 10)?.id).toBe("early");

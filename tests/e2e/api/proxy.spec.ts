@@ -2,8 +2,8 @@
 // proxy-secure-cookie.browser.spec.ts). Every test builds its own UserSession(s) — its own
 // cookie identity — never sharing one across tests.
 import { expect, test, request as playwrightRequest } from "@playwright/test";
-import { BASE_URL, BRIEF_VIDEO_YOUTUBE_ID } from "./helpers/env";
-import { createSession, findVideoByYoutubeId, postEvents, UserSession } from "./helpers/api";
+import { BASE_URL, BRIEF_VIDEO_YOUTUBE_ID } from "../helpers/env";
+import { createSession, findVideoByYoutubeId, postEvents, UserSession } from "../helpers/api";
 
 const COOKIE_NAME = "vq_uid";
 

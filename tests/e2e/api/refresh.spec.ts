@@ -3,8 +3,8 @@
 // alreadyRewarded / totalPoints surviving a brand new session — is covered at the tail of
 // honest-flow.spec.ts, since it needs an already-rewarded session to refresh from.)
 import { expect, test } from "@playwright/test";
-import { createSession, findVideoByYoutubeId, getMe, postEvents, UserSession, type EventsApplyBody, type SessionCreateBody } from "./helpers/api";
-import { CHEATS_VIDEO_YOUTUBE_ID } from "./helpers/env";
+import { createSession, findVideoByYoutubeId, getMe, postEvents, UserSession, type EventsApplyBody, type SessionCreateBody } from "../helpers/api";
+import { CHEATS_VIDEO_YOUTUBE_ID } from "../helpers/env";
 
 test("refresh mid-video: POST /api/sessions again resumes the same session, paused, at the same position", async ({ request }) => {
   const user = new UserSession(request);

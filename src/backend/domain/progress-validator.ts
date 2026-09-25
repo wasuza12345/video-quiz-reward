@@ -52,9 +52,6 @@ export function checkSeek(s: SessionSnapshot, pos: number): SeekCheck {
   return { ok: false, reason: "SEEK_FORWARD" };
 }
 
-/** Re-exported so callers/tests importing it from here (its pre-existing home) still work. */
-export { nextUnpassedQuestion };
-
 /** (3) Quiz gate: the question a TICK to `pos` runs into, if any (pos is then clamped to its triggerSec). */
 export function quizGateAt(questions: QuizGate[], passedQuestionIds: string[], pos: number): QuizGate | null {
   const next = nextUnpassedQuestion(questions, passedQuestionIds);

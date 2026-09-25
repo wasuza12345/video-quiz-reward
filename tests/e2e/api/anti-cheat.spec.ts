@@ -3,9 +3,9 @@
 // Each test gets its own fresh `request` context (own cookie => own user => own fresh session),
 // so they can safely share the same throwaway fixture video without interfering with each other.
 import { expect, test } from "@playwright/test";
-import { claim, createSession, findVideoByYoutubeId, postEvents, UserSession, type EventsApplyBody } from "./helpers/api";
-import { readSessionFlags } from "./helpers/db";
-import { CHEATS_VIDEO_YOUTUBE_ID } from "./helpers/env";
+import { claim, createSession, findVideoByYoutubeId, postEvents, UserSession, type EventsApplyBody } from "../helpers/api";
+import { readSessionFlags } from "../helpers/db";
+import { CHEATS_VIDEO_YOUTUBE_ID } from "../helpers/env";
 
 async function freshCheatSession(user: UserSession) {
   const video = await findVideoByYoutubeId(user, CHEATS_VIDEO_YOUTUBE_ID);

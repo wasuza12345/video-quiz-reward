@@ -4,7 +4,7 @@
 // business logic, so duplicating the ~real-video-touching parts at 390×844 wouldn't add much.
 import { expect, test } from "@playwright/test";
 import { adminLogin } from "../helpers/admin";
-import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_TEST_VIDEO_YOUTUBE_ID, BRIEF_VIDEO_YOUTUBE_ID } from "../helpers/env";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_TEST_VIDEO_YOUTUBE_ID, BRIEF_VIDEO_YOUTUBE_ID } from "../../helpers/env";
 import { exposeYouTubePlayerOnWindow, resetWindowPlayer, seekPlayerTo, waitForPlayerDuration, waitForWindowPlayer } from "../helpers/player";
 import { createSession, findVideoByYoutubeId, postEvents, UserSession } from "../../helpers/api";
 
