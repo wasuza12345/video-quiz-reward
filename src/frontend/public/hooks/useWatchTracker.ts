@@ -34,6 +34,9 @@ export interface WatchTrackerApi {
    * uses this to skip the duplicate PAUSE the tracker's own player.pauseVideo() call triggers
    * (review MINOR 4). */
   isGateInFlight: () => boolean;
+  /** The tracker's local high-water mark (display only — server furthestSec stays authoritative
+   * for anti-cheat; see usePlayerProgress). */
+  getMaxReached: () => number;
 }
 
 export function useWatchTracker({
@@ -125,5 +128,5 @@ export function useWatchTracker({
     return () => clearInterval(interval);
   }, [player, active, writer, dispatch]);
 
-  return useMemo(() => ({ isGateInFlight: () => gateInFlight.current }), []);
+  return useMemo(() => ({ isGateInFlight: () => gateInFlight.current, getMaxReached: () => tracker.maxReached }), [tracker]);
 }

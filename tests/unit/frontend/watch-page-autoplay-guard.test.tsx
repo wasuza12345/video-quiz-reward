@@ -17,7 +17,7 @@ import { YT_PLAYER_STATE } from "@/frontend/public/hooks/useYouTubePlayer";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
 vi.mock("@/frontend/public/hooks/useWatchTracker", () => ({
-  useWatchTracker: () => ({ isGateInFlight: () => false }),
+  useWatchTracker: () => ({ isGateInFlight: () => false, getMaxReached: () => 0 }),
 }));
 
 const ME_RESPONSE: MeResponse = { totalPoints: 0, rewardedVideoIds: [] };

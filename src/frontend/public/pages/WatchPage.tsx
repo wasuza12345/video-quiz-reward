@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { PublicHeader } from "../components/PublicHeader";
 import { PointsBadge } from "../components/PointsBadge";
 import { VideoPlayer } from "../components/VideoPlayer";
-import { ControlBar } from "../components/ControlBar";
+import { LiveControlBar } from "../components/LiveControlBar";
 import { StatusLine } from "../components/StatusLine";
 import { QuizProgress } from "../components/QuizProgress";
 import { QuizModal } from "../components/QuizModal";
@@ -398,12 +398,15 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
         {!isLoading && state.video && (
           <>
-            <ControlBar
+            <LiveControlBar
+              player={player}
+              active={state.status === "playing"}
+              fallbackPositionSec={state.positionSec}
+              fallbackFurthestSec={state.furthestSec}
+              getMaxReached={trackerApi.getMaxReached}
               isPlaying={isPlaying}
               enabled={selectPlayButtonEnabled(state) && playerReady && !autoResuming}
               onToggle={handleToggle}
-              positionSec={state.positionSec}
-              furthestSec={state.furthestSec}
               durationSec={state.video.durationSec}
               quizzes={state.quizzes}
               passedQuestionIds={state.passedQuestionIds}
