@@ -25,6 +25,9 @@ export type WatchAction =
   | { type: "ANSWER_ACCEPTED"; result: AnswerResponse }
   | { type: "ANSWER_FAILED"; code: "network" | "INVALID_CHOICE" | "NOT_AT_QUIZ" }
   | { type: "QUIZ_RESUME_AFTER_CORRECT"; hidden: boolean }
+  // ~3s backstop for the "resuming" phase: if playVideo() never yields a real PLAYING (e.g.
+  // iOS/Safari silently blocking autoplay without a user gesture), this re-enables the toggle.
+  | { type: "RESUME_TIMEOUT" }
   | { type: "VIDEO_ENDED" }
   | { type: "ENDED_ACCEPTED" }
   | { type: "ENDED_NOT_WATCHED"; seekTo: number }

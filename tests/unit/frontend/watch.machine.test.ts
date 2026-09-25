@@ -3,6 +3,7 @@
 // old flat status/quizPhase/pausedByTabHidden fields.
 import { describe, expect, it } from "vitest";
 import { initialWatchState, watchMachine, WATCH_ERRORS, type WatchState } from "@/frontend/public/state/watch.machine";
+import { selectPlayButtonEnabled } from "@/frontend/public/state/watch.selectors";
 import type { WatchAction } from "@/frontend/public/state/watch.actions";
 import type { SessionCreateResponse } from "@/shared/contracts/session";
 
@@ -196,11 +197,11 @@ describe("row 13, 11: answering", () => {
     expect(s).toEqual(correct);
   });
 
-  it("QUIZ_RESUME_AFTER_CORRECT closes the modal → paused (row 13)", () => {
+  it("QUIZ_RESUME_AFTER_CORRECT closes the modal → resuming (row 13, #12b)", () => {
     const submitting = watchMachine(atQuiz(), { type: "ANSWER_SUBMITTED", choice: "D" });
     const correct = watchMachine(submitting, { type: "ANSWER_ACCEPTED", result: { correct: true, state: "PAUSED" } });
     const s = watchMachine(correct, { type: "QUIZ_RESUME_AFTER_CORRECT", hidden: false });
-    expect(s.phase).toEqual({ kind: "paused", reason: "user" });
+    expect(s.phase).toEqual({ kind: "resuming" });
   });
 
   it("QUIZ_RESUME_AFTER_CORRECT with hidden:true tags reason tab_hidden so the notice can show", () => {
@@ -236,6 +237,53 @@ describe("row 13, 11: answering", () => {
     const s = watchMachine(submitting, { type: "ANSWER_FAILED", code: "NOT_AT_QUIZ" });
     expect(s.phase).toEqual({ kind: "paused", reason: "user" });
     expect(s.toast?.message).toBeTruthy();
+  });
+});
+
+describe("#12b: the 'resuming' phase (~900ms auto-resume after a correct answer)", () => {
+  function atResuming(): WatchState {
+    const atQuiz = run([
+      { type: "SESSION_LOADED", session: session() },
+      { type: "PLAY_CLICKED" },
+      { type: "QUIZ_GATE_HIT", questionId: "q1" },
+      { type: "GATE_TICK_RESULT", state: "QUIZ_PENDING", positionSec: 13, furthestSec: 13 },
+    ]);
+    const submitting = watchMachine(atQuiz, { type: "ANSWER_SUBMITTED", choice: "D" });
+    const correct = watchMachine(submitting, { type: "ANSWER_ACCEPTED", result: { correct: true, state: "PAUSED" } });
+    return watchMachine(correct, { type: "QUIZ_RESUME_AFTER_CORRECT", hidden: false });
+  }
+
+  it("selectPlayButtonEnabled excludes 'resuming', matching the old autoResuming-disables-the-toggle flag", () => {
+    const s = atResuming();
+    expect(s.phase.kind).toBe("resuming");
+    expect(selectPlayButtonEnabled(s)).toBe(false);
+  });
+
+  it("PLAY_CLICKED from 'resuming' completes the resume → playing (the real PLAYING confirmation)", () => {
+    const s = watchMachine(atResuming(), { type: "PLAY_CLICKED" });
+    expect(s.phase).toEqual({ kind: "playing" });
+  });
+
+  it("PAUSE_CLICKED from 'resuming' lands on paused — never stuck 'resuming' with a disabled toggle", () => {
+    const s = watchMachine(atResuming(), { type: "PAUSE_CLICKED" });
+    expect(s.phase).toEqual({ kind: "paused", reason: "user" });
+  });
+
+  it("TAB_HIDDEN from 'resuming' lands on paused/tab_hidden — the reducer's half of the hidden-tab-during-resume edge", () => {
+    const s = watchMachine(atResuming(), { type: "TAB_HIDDEN" });
+    expect(s.phase).toEqual({ kind: "paused", reason: "tab_hidden" });
+  });
+
+  it("RESUME_TIMEOUT re-enables Play: 'resuming' → paused/user if playVideo() never confirms", () => {
+    const s = watchMachine(atResuming(), { type: "RESUME_TIMEOUT" });
+    expect(s.phase).toEqual({ kind: "paused", reason: "user" });
+    expect(selectPlayButtonEnabled(s)).toBe(true);
+  });
+
+  it("RESUME_TIMEOUT outside 'resuming' is a no-op", () => {
+    const playing = run([{ type: "SESSION_LOADED", session: session() }, { type: "PLAY_CLICKED" }]);
+    const s = watchMachine(playing, { type: "RESUME_TIMEOUT" });
+    expect(s).toEqual(playing);
   });
 });
 

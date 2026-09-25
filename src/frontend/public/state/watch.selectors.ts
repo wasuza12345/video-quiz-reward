@@ -37,6 +37,10 @@ export function selectStatusLineCopy(state: WatchState): string {
     }
     case "paused":
       return phase.reason === "tab_hidden" ? copy.statusLine.pausedTabHidden : copy.statusLine.paused;
+    case "resuming":
+      // Matches the old flat reducer, where status stayed "paused" (reason "user") for this whole
+      // window — autoResuming was a separate WatchPage-only flag that didn't change the copy.
+      return copy.statusLine.paused;
     case "ending":
       return copy.statusLine.ended;
     case "claiming":

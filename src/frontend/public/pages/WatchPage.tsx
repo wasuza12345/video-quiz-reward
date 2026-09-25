@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PublicHeader } from "../components/PublicHeader";
 import { PointsBadge } from "../components/PointsBadge";
@@ -124,40 +124,10 @@ export function WatchPage({ videoId }: WatchPageProps) {
     dispatch,
   });
 
-  // True from the moment the auto-resume-after-correct-answer timer fires until the player
-  // actually confirms PLAYING — the ControlBar toggle is disabled for this window so a click
-  // can't race the auto-resume's own seek/play and produce a spurious backward jump.
-  const [autoResuming, setAutoResuming] = useState(false);
-
-  // Backstops autoResuming: set true the instant the quiz auto-resume timer fires (see below), it
-  // must come back to false once the player actually confirms PLAYING. If playVideo() never
-  // yields PLAYING — e.g. iOS/Safari silently blocking playback that lacks a user gesture — the
-  // Play/Pause control would stay disabled forever with no way for the user to recover. This
-  // timeout clears it after a few seconds so a manual tap can take over.
-  const autoResumingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const AUTO_RESUMING_BACKSTOP_MS = 3000;
-
-  const armAutoResumingBackstop = useCallback(() => {
-    if (autoResumingTimeoutRef.current !== null) clearTimeout(autoResumingTimeoutRef.current);
-    autoResumingTimeoutRef.current = setTimeout(() => {
-      setAutoResuming(false);
-      autoResumingTimeoutRef.current = null;
-    }, AUTO_RESUMING_BACKSTOP_MS);
-  }, []);
-
-  const clearAutoResumingBackstop = useCallback(() => {
-    if (autoResumingTimeoutRef.current !== null) {
-      clearTimeout(autoResumingTimeoutRef.current);
-      autoResumingTimeoutRef.current = null;
-    }
-  }, []);
-
   // These timeouts are all refs, not tied to any single effect's cleanup — clear them on unmount
-  // so a late timer never calls setState (or, for the ENDED recovery retry, touches the player)
-  // after the component is gone.
+  // so a late timer never touches the player after the component is gone.
   useEffect(() => {
     return () => {
-      if (autoResumingTimeoutRef.current !== null) clearTimeout(autoResumingTimeoutRef.current);
       if (endedRecoveryRetryTimeoutRef.current !== null) clearTimeout(endedRecoveryRetryTimeoutRef.current);
     };
   }, []);
@@ -173,17 +143,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
       clearTimeout(endedRecoveryRetryTimeoutRef.current);
       endedRecoveryRetryTimeoutRef.current = null;
     }
-    clearAutoResumingBackstop();
-  }, [sessionId, clearAutoResumingBackstop]);
-
-  // autoResuming reset via React's documented "adjust state during render" pattern (not an effect
-  // — a synchronous setState in an effect body is a lint error; a ref read during render is too —
-  // and this way never even paints the stale value for a frame).
-  const [autoResumingSessionId, setAutoResumingSessionId] = useState(sessionId);
-  if (autoResumingSessionId !== sessionId) {
-    setAutoResumingSessionId(sessionId);
-    if (autoResuming) setAutoResuming(false);
-  }
+  }, [sessionId]);
 
   // --- player state changes drive both the reducer and the server write (plan §6) ---
   useEffect(() => {
@@ -268,8 +228,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
         if (!writer.isInFlight()) void writer.sendImmediate("TAB_HIDDEN", currentTime, undefined, { keepalive: true });
         return;
       }
-      setAutoResuming(false);
-      clearAutoResumingBackstop();
       // The PAUSED event's own position is itself stale on real YouTube — the ~0.27s pause-
       // settle creep only becomes visible here, at the next genuine PLAYING read. Bounded the
       // same way as the PAUSED call below.
@@ -282,8 +240,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
       // Trust the (possibly stale) PAUSED position outright too — see noteSettled's own comment
       // and the PLAYING branch above for why both call sites matter.
       trackerApi.noteSettled(currentTime);
-      setAutoResuming(false);
-      clearAutoResumingBackstop();
       // The gate-hit flow (useWatchTracker) already calls player.pause() and sends its
       // own PAUSE — skip the duplicate this would otherwise send.
       if (trackerApi.isGateInFlight()) return;
@@ -292,7 +248,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
     };
 
     onEndedRef.current = (currentTime: number) => {
-      clearAutoResumingBackstop();
       attemptEndedRecovery(currentTime);
     };
   });
@@ -314,22 +269,30 @@ export function WatchPage({ videoId }: WatchPageProps) {
   useEffect(() => {
     if (state.phase.kind !== "quiz" || state.phase.feedback?.tone !== "correct") return;
     const t = setTimeout(() => {
+      // The machine itself decides hidden -> "paused"/tab_hidden vs. not-hidden -> "resuming";
+      // the resuming lifecycle effect below owns the actual player.play() call and its backstop.
       const hidden = document.visibilityState === "hidden";
       dispatch({ type: "QUIZ_RESUME_AFTER_CORRECT", hidden });
-      // A hidden tab never gets rAF ticks, so playVideo() here would silently start real playback
-      // (and TICKs) the user can't see or stop. Leave status "paused" (already set above, tagged
-      // pausedByTabHidden so the "you left the tab" notice shows) so the user resumes with an
-      // explicit tap on return.
-      if (hidden) return;
-      setAutoResuming(true);
-      armAutoResumingBackstop();
-      // player.play() clears any stale guard from an earlier non-autoplaying seek (e.g. a
-      // TICK-overshoot clamp while the quiz was open) on its own — a real intentional play must
-      // never be swallowed.
-      player?.play();
     }, 900);
     return () => clearTimeout(t);
-  }, [state.phase, player, armAutoResumingBackstop]);
+  }, [state.phase]);
+
+  // --- "resuming" lifecycle: issue the actual play() once, and back it out with a timeout if a
+  // real PLAYING confirmation never arrives (see RESUME_TIMEOUT's own comment in watch.machine.ts
+  // for why). Runs exactly once per entry into "resuming" — PLAY_CLICKED/PAUSE_CLICKED/TAB_HIDDEN/
+  // RESUME_TIMEOUT all leave the phase, which reruns this effect and clears the timeout via its
+  // cleanup, so there's nothing left to separately reset on a session swap or unmount. ---
+  const isResuming = state.phase.kind === "resuming";
+  const RESUME_BACKSTOP_MS = 3000;
+  useEffect(() => {
+    if (!isResuming) return;
+    // player.play() clears any stale guard from an earlier non-autoplaying seek (e.g. a
+    // TICK-overshoot clamp while the quiz was open) on its own — a real intentional play must
+    // never be swallowed.
+    player?.play();
+    const t = setTimeout(() => dispatch({ type: "RESUME_TIMEOUT" }), RESUME_BACKSTOP_MS);
+    return () => clearTimeout(t);
+  }, [isResuming, player]);
 
   // --- auto-claim once ended (rows 5, 18) ---
   const claimError = state.phase.kind === "claiming" && state.phase.failed;
@@ -382,12 +345,14 @@ export function WatchPage({ videoId }: WatchPageProps) {
   }, [player, writer, state.phase.kind]);
 
   const handleToggle = useCallback(() => {
-    if (!player || !selectPlayButtonEnabled(state) || autoResuming) return;
+    // selectPlayButtonEnabled excludes "resuming" on its own — no separate autoResuming check
+    // needed (see its own comment in watch.machine.ts).
+    if (!player || !selectPlayButtonEnabled(state)) return;
     // A real user gesture always wins over the seek guard, in case it's still armed — player.play()
     // clears it on its own.
     if (state.phase.kind === "playing") player.pause();
     else player.play();
-  }, [player, state, autoResuming]);
+  }, [player, state]);
 
   // Clears the double-tap lock whenever the quiz genuinely (re-)enters a fresh "answering"
   // attempt: the question first opens, or a wrong answer's feedback resets step back to
@@ -549,7 +514,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
               fallbackFurthestSec={state.session?.furthestSec ?? 0}
               getMaxReached={trackerApi.getMaxReached}
               isPlaying={isPlaying}
-              enabled={selectPlayButtonEnabled(state) && playerReady && !autoResuming}
+              enabled={selectPlayButtonEnabled(state) && playerReady}
               onToggle={handleToggle}
               durationSec={video.durationSec}
               quizzes={quizzes}

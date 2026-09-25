@@ -21,11 +21,13 @@
 //     batch's outcome that a dispatch-time bake can't — no observed real-world case, but named
 //     here since it's a genuine (if narrow) behavioral difference.
 //
-// Scope note: the plan's Phase union also lists a quiz step "resuming" for the ~900ms
-// auto-resume-after-correct-answer window. That window is still owned by WatchPage's own
-// `autoResuming` useState + backstop timer, not by this reducer — absorbing it (a new
-// RESUME_TIMEOUT action, a machine-owned backstop) is #12b, a separate follow-up commit, so left
-// out of QuizStep entirely here rather than declared-but-unused dead code.
+// #12b: the ~900ms auto-resume-after-correct-answer window is a top-level Phase ("resuming"), not
+// a QuizStep — the quiz modal has already closed (QUIZ_RESUME_AFTER_CORRECT always leaves "quiz")
+// by the time it starts, matching what was visibly true even before this window moved into the
+// machine. A QuizStep "resuming" was considered instead but rejected: keeping phase.kind "quiz"
+// through the resume attempt would reopen the modal (`open` derives from phase.kind === "quiz"),
+// and the 900ms timer's own re-arm guard (phase.kind==="quiz" && feedback.tone==="correct") would
+// keep matching after the step changed, re-triggering the timer forever.
 import { watch as copy } from "../constants/copy.th";
 import type { ClaimResponse, PublicQuestion, SessionResponseVideo, SessionState } from "@/shared/contracts/session";
 import type { WatchAction } from "./watch.actions";
@@ -64,6 +66,11 @@ export type Phase =
   | { kind: "ready"; resumedAtSec: number | null }
   | { kind: "playing" }
   | { kind: "paused"; reason: "user" | "tab_hidden" }
+  // The ~900ms window between a correct answer's modal closing and playback actually resuming —
+  // player.play() has been issued but hasn't yet been confirmed by a real PLAYING (or timed out
+  // via RESUME_TIMEOUT). selectPlayButtonEnabled excludes it, matching the old autoResuming flag
+  // disabling the toggle for this same window.
+  | { kind: "resuming" }
   | {
       kind: "quiz";
       questionId: string;
@@ -194,15 +201,23 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
       return { ...state, phase: { kind: "error", error: ERROR.playerFailed } };
 
     case "PLAY_CLICKED":
-      if (state.phase.kind !== "ready" && state.phase.kind !== "paused") return state;
+      // "resuming" included: a genuine PLAYING confirmation during the auto-resume window
+      // completes the transition to "playing" (the common case — the whole point of the resume).
+      if (state.phase.kind !== "ready" && state.phase.kind !== "paused" && state.phase.kind !== "resuming") return state;
       return { ...state, phase: { kind: "playing" }, showReplayBanner: false };
 
     case "PAUSE_CLICKED":
-      if (state.phase.kind !== "playing") return state;
+      // "resuming" included: a PAUSED confirmation arriving during the auto-resume window (e.g. a
+      // stray pause landing before the resume's own play() settles) must still land on "paused",
+      // not stay stuck "resuming" with a disabled toggle and no way out but the 3s backstop.
+      if (state.phase.kind !== "playing" && state.phase.kind !== "resuming") return state;
       return { ...state, phase: { kind: "paused", reason: "user" } };
 
     case "TAB_HIDDEN":
-      if (state.phase.kind !== "playing") return state;
+      // "resuming" included: the tab backgrounding during the auto-resume window is exactly the
+      // hidden-tab edge onPlayRef's own hidden check exists for — this is the reducer's half of
+      // that (dropping the disabled-toggle "resuming" phase instead of leaving it stuck).
+      if (state.phase.kind !== "playing" && state.phase.kind !== "resuming") return state;
       return { ...state, phase: { kind: "paused", reason: "tab_hidden" } };
 
     case "QUIZ_GATE_HIT":
@@ -309,7 +324,17 @@ export function watchMachine(state: WatchState, action: WatchAction): WatchState
 
     case "QUIZ_RESUME_AFTER_CORRECT":
       if (state.phase.kind !== "quiz") return state;
-      return { ...state, phase: { kind: "paused", reason: action.hidden ? "tab_hidden" : "user" } };
+      // A hidden tab never gets rAF ticks, so attempting the resume would silently start real
+      // playback (and TICKs) the user can't see or stop — land straight on "paused" (tagged
+      // tab_hidden so the "you left the tab" notice shows), never "resuming".
+      if (action.hidden) return { ...state, phase: { kind: "paused", reason: "tab_hidden" } };
+      return { ...state, phase: { kind: "resuming" } };
+
+    case "RESUME_TIMEOUT":
+      // Backstops "resuming": if playVideo() never yields a PLAYING confirmation at all — e.g.
+      // iOS/Safari silently blocking playback that lacks a user gesture — the toggle would stay
+      // disabled forever with no way for the user to recover otherwise.
+      return state.phase.kind === "resuming" ? { ...state, phase: { kind: "paused", reason: "user" } } : state;
 
     case "VIDEO_ENDED":
       return { ...state, phase: { kind: "ending" } };
