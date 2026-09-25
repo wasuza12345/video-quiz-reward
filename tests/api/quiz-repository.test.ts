@@ -8,7 +8,7 @@ import { createQuizRepository } from "@/backend/modules/quiz/quiz.repository";
 import { prisma } from "@/backend/lib/prisma";
 import { createTestAdmin, createTestQuestion, createTestVideo } from "./helpers";
 
-describe("QuizRepository.update — the atomic lock gate (review round 3)", () => {
+describe("QuizRepository.update — the atomic lock gate", () => {
   afterAll(() => prisma.$disconnect());
 
   it("a locked video → returns null (VIDEO_LOCKED, per the service), with no partial changes committed", async () => {
@@ -55,7 +55,7 @@ describe("QuizRepository.update — the atomic lock gate (review round 3)", () =
   });
 });
 
-describe("QuizRepository.delete — the atomic lock gate (review round 3)", () => {
+describe("QuizRepository.delete — the atomic lock gate", () => {
   afterAll(() => prisma.$disconnect());
 
   it("a locked video → returns false, the question and no audit row are left in place", async () => {

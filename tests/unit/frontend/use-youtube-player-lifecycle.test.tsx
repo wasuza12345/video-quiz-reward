@@ -89,7 +89,7 @@ async function flush() {
   });
 }
 
-describe("useYouTubePlayer lifecycle (review round: refresh disables Play forever)", () => {
+describe("useYouTubePlayer lifecycle (a refresh must not disable Play forever)", () => {
   it("never constructs a player for an empty youtubeId (the WatchPage pre-session-load state)", async () => {
     act(() => root.render(<Harness youtubeId="" />));
     await flush();
