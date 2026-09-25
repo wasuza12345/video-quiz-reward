@@ -9,6 +9,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LiveControlBar } from "@/frontend/public/components/LiveControlBar";
+import { usePlayerProgress, type UsePlayerProgressOptions } from "@/frontend/public/hooks/usePlayerProgress";
 import type { YTPlayer } from "@/frontend/public/hooks/useYouTubePlayer";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -133,5 +134,107 @@ describe("LiveControlBar tracks the local player in real time", () => {
     });
 
     expect(Math.abs(progressBarValue() - player.getCurrentTime())).toBeLessThan(0.5);
+  });
+});
+
+/** A manually-controlled player: currentTime is set directly by the test (no wall-clock advance),
+ * and every read is counted — needed to prove both the exact snap-back value and that nothing
+ * polls getCurrentTime() while inactive/unmounted. */
+class ManualPlayer implements YTPlayer {
+  currentTime: number;
+  getCurrentTimeCallCount = 0;
+
+  constructor(startPositionSec: number) {
+    this.currentTime = startPositionSec;
+  }
+
+  getCurrentTime(): number {
+    this.getCurrentTimeCallCount += 1;
+    return this.currentTime;
+  }
+
+  playVideo() {}
+  pauseVideo() {}
+  seekTo() {}
+  getPlayerState() {
+    return 1;
+  }
+  setPlaybackRate() {}
+  destroy() {}
+}
+
+function ProgressProbe(props: UsePlayerProgressOptions) {
+  const { positionSec, furthestSec } = usePlayerProgress(props);
+  return <div data-testid="probe" data-position={positionSec} data-furthest={furthestSec} />;
+}
+
+function probeFurthest(): number {
+  const el = container.querySelector('[data-testid="probe"]');
+  if (!el) throw new Error("probe not rendered");
+  return Number(el.getAttribute("data-furthest"));
+}
+
+function probePosition(): number {
+  const el = container.querySelector('[data-testid="probe"]');
+  if (!el) throw new Error("probe not rendered");
+  return Number(el.getAttribute("data-position"));
+}
+
+describe("usePlayerProgress: planner review follow-up (progress band never shrinks)", () => {
+  it("the watched band never goes below the server furthestSec after a backward reconcile", async () => {
+    // getMaxReached simulates the tracker having just been reconcile()'d down to a resumed/
+    // seeked-to position (reducer:170's resume-with-positionSec<furthestSec, or reducer:301's
+    // ENDED_NOT_WATCHED) — well below the server-confirmed furthestSec passed as the fallback.
+    const player = new ManualPlayer(5);
+    act(() => {
+      root.render(<ProgressProbe player={player} active fallbackPositionSec={5} fallbackFurthestSec={20} getMaxReached={() => 5} />);
+    });
+
+    // Before the first rAF tick lands: the "no live snapshot yet" branch must already floor it.
+    expect(probeFurthest(), "must never show less than the server furthestSec, even before the first tick").toBe(20);
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(probeFurthest(), "must still be floored at the server furthestSec after ticking").toBe(20);
+  });
+
+  it("follows the player backward within 250ms (a rejected-seek snap-back, e.g. 12 -> 8, while playing)", async () => {
+    const player = new ManualPlayer(12);
+    act(() => {
+      root.render(<ProgressProbe player={player} active fallbackPositionSec={12} fallbackFurthestSec={12} getMaxReached={() => player.getCurrentTime()} />);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(probePosition(), "must show the initial position before the seek").toBe(12);
+
+    player.currentTime = 8; // simulates WatchPage's pendingSeekTo effect calling player.seekTo(8)
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(probePosition(), "must follow the player back down within 250ms, not stay stuck at 12").toBe(8);
+  });
+
+  it("makes zero getCurrentTime() calls 400ms after active turns false", async () => {
+    const player = new ManualPlayer(5);
+    act(() => {
+      root.render(<ProgressProbe player={player} active={false} fallbackPositionSec={5} fallbackFurthestSec={5} getMaxReached={() => player.getCurrentTime()} />);
+    });
+    const callsAfterMount = player.getCurrentTimeCallCount;
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(player.getCurrentTimeCallCount, "no rAF polling should run while inactive — a paused/quiz_open player isn't advancing").toBe(callsAfterMount);
+  });
+
+  it("makes zero getCurrentTime() calls 400ms after unmount", async () => {
+    const player = new ManualPlayer(5);
+    act(() => {
+      root.render(<ProgressProbe player={player} active fallbackPositionSec={5} fallbackFurthestSec={5} getMaxReached={() => player.getCurrentTime()} />);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 250)); // a couple of ticks, proves polling was actually running
+    expect(player.getCurrentTimeCallCount, "the loop must have been ticking before unmount").toBeGreaterThan(0);
+
+    act(() => root.unmount());
+    const callsAtUnmount = player.getCurrentTimeCallCount;
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(player.getCurrentTimeCallCount, "the rAF loop must be cancelled on unmount, not leak").toBe(callsAtUnmount);
   });
 });
