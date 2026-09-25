@@ -172,6 +172,13 @@ test("create video → publish → feature → shows on / → session timeline �
     await expect(page.getByLabel("ลิงก์ YouTube")).toHaveAttribute("readonly", "");
   });
 
+  await test.step("restore the seeded brief video as featured (this test's own 'feature' step above otherwise leaves the wrong video — and its own trigger time/choices — globally featured for every test that shares this webServer/DB and runs after this one)", async () => {
+    await page.goto(`/admin/videos/${briefVideoId}`);
+    const featureBtn = page.getByRole("button", { name: "ตั้งเป็นคลิปแนะนำ" });
+    await featureBtn.click();
+    await expect(page.getByText("★ คลิปแนะนำ")).toBeVisible({ timeout: 10_000 });
+  });
+
   await test.step("logout redirects to the login page, and /admin then requires logging in again", async () => {
     await page.getByRole("button", { name: "ออกจากระบบ" }).click();
     await page.waitForURL(/\/admin\/login\?reason=logout/, { timeout: 10_000 });
