@@ -47,7 +47,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   const onPlayRef = useRef<(positionSec: number) => void>(() => {});
   const onPauseRef = useRef<(positionSec: number) => void>(() => {});
   const onEndedRef = useRef<(positionSec: number) => void>(() => {});
-  const { containerRef, player, rawPlayer, ready: playerReady, error: playerError } = useYouTubePlayer({
+  const { containerRef, player, ready: playerReady, error: playerError } = useYouTubePlayer({
     youtubeId: state.video?.youtubeId ?? "",
     title: youtubePlayerTitle(state.video?.title ?? ""),
     onPlay: (pos) => onPlayRef.current(pos),
@@ -103,7 +103,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   }, [state.status]);
 
   const trackerApi = useWatchTracker({
-    player: rawPlayer,
+    player,
     active: state.status === "playing",
     sessionId: state.sessionId,
     furthestSec: state.furthestSec,
@@ -152,12 +152,9 @@ export function WatchPage({ videoId }: WatchPageProps) {
     };
   }, []);
 
-  // --- resets that follow a fresh session — including an in-app replay of the same video, which
-  // reuses the existing player instance rather than remounting it. autoResuming/the autoplay
-  // guard are otherwise only ever cleared by a
-  // player state change or their own backstop timers, none of which fire on a session swap by
-  // itself — stale from the just-ended previous session, they'd wrongly keep the just-armed
-  // pendingSeekTo-to-0 guard (or a stuck autoResuming) around into the new one. ---
+  // --- session bookkeeping resets that follow a fresh session (a real reload or an in-app
+  // replay) — none of these fire on a session swap by themselves, so they'd wrongly carry state
+  // from the just-ended previous session into the new one. ---
   useEffect(() => {
     claimAttemptedRef.current = null;
     endedRecoveryAttemptsRef.current = 0;
@@ -166,9 +163,17 @@ export function WatchPage({ videoId }: WatchPageProps) {
       clearTimeout(endedRecoveryRetryTimeoutRef.current);
       endedRecoveryRetryTimeoutRef.current = null;
     }
-    player?.resetGuard();
     clearAutoResumingBackstop();
-  }, [state.sessionId, player, clearAutoResumingBackstop]);
+  }, [state.sessionId, clearAutoResumingBackstop]);
+
+  // --- drop a stale autoplay guard on a fresh session. Separate from the bookkeeping reset above
+  // (keyed on sessionId only) so this doesn't also fire — harmlessly, but needlessly — whenever
+  // `player` itself changes identity (becomes ready, or a youtubeId/title change remounts it). An
+  // in-app replay reuses the same player instance, still possibly guard-armed from the just-ended
+  // previous session's own pendingSeekTo-to-0 seek; that guard must not carry over. ---
+  useEffect(() => {
+    player?.resetGuard();
+  }, [state.sessionId, player]);
   // autoResuming reset via React's documented "adjust state during render" pattern (not an effect
   // — a synchronous setState in an effect body is a lint error; a ref read during render is too —
   // and this way never even paints the stale value for a frame).
@@ -463,7 +468,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
         {!isLoading && state.video && (
           <>
             <LiveControlBar
-              player={rawPlayer}
+              player={player}
               active={state.status === "playing"}
               fallbackPositionSec={state.positionSec}
               fallbackFurthestSec={state.furthestSec}

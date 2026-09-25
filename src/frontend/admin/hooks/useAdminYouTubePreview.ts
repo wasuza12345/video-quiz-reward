@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadYouTubeIframeApi, YT_PLAYER_STATE, type YTPlayer } from "@/frontend/public/hooks/useYouTubePlayer";
+import { loadYouTubeIframeApi } from "@/frontend/public/hooks/useYouTubePlayer";
+import { YT_PLAYER_STATE, type YTPlayer } from "@/frontend/public/player/youtube-player-types";
 
 /** The admin preview needs `getDuration()` too (VideoDetailsForm auto-fills durationSec from it —
  * plan §7: "durationSec filled by the admin preview player's getDuration()"), which the public

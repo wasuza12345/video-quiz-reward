@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnswerResponse, EventsApplyResponse, SessionCreateResponse } from "@/shared/contracts/session";
 import type { MeResponse } from "@/shared/contracts/video";
 import type { ClientEventType } from "@/shared/constants/session";
-import { YT_PLAYER_STATE } from "@/frontend/public/hooks/useYouTubePlayer";
+import { YT_PLAYER_STATE } from "@/frontend/public/player/youtube-player-types";
 import { watch as copy } from "@/frontend/public/constants/copy.th";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));

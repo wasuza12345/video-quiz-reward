@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { YTPlayer } from "./useYouTubePlayer";
+import type { YouTubePlayerAdapter } from "../player/youtube-player-adapter";
 
 export interface UsePlayerProgressOptions {
-  player: YTPlayer | null;
+  player: YouTubePlayerAdapter | null;
   /** Only ticks while true (the reducer thinks we're playing) — mirrors useWatchTracker's own
    * `active` gate. The player isn't advancing in any other status, so a single read per render
    * already shows the right (frozen) value without polling. */
@@ -25,7 +25,7 @@ const TICK_INTERVAL_MS = 100; // ~10Hz — comfortably inside the 0.5s display-a
 /**
  * Display-only local clock for the progress bar and time label — the server-synced
  * state.positionSec only moves on a TICK flush, up to 5s stale. Nothing here changes what gets
- * sent to the server or how anti-cheat decides anything; it only reads player.getCurrentTime()
+ * sent to the server or how anti-cheat decides anything; it only reads player.currentTime()
  * and the tracker's local high-water mark for display. Callers should keep this in its own small
  * component (see LiveControlBar) so the ~10Hz re-renders stay scoped to the progress UI instead
  * of the whole watch page.
@@ -43,7 +43,7 @@ export function usePlayerProgress({ player, active, fallbackPositionSec, fallbac
     const loop = (now: number) => {
       if (now - lastTickAt >= TICK_INTERVAL_MS) {
         lastTickAt = now;
-        setLive({ positionSec: player.getCurrentTime(), furthestSec: Math.max(getMaxReached(), fallbackFurthestSec) });
+        setLive({ positionSec: player.currentTime(), furthestSec: Math.max(getMaxReached(), fallbackFurthestSec) });
       }
       rafId = requestAnimationFrame(loop);
     };
@@ -59,5 +59,5 @@ export function usePlayerProgress({ player, active, fallbackPositionSec, fallbac
   // reconciled *down* to the resumed/seeked-to position (a resume where positionSec < furthestSec,
   // or the ENDED_NOT_WATCHED seek-back) — state.furthestSec is server-authoritative and only ever
   // moves forward, so it's always a safe floor for what the watched band should show.
-  return { positionSec: player.getCurrentTime(), furthestSec: Math.max(getMaxReached(), fallbackFurthestSec) };
+  return { positionSec: player.currentTime(), furthestSec: Math.max(getMaxReached(), fallbackFurthestSec) };
 }

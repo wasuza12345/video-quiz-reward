@@ -4,11 +4,11 @@ import { useEffect, useMemo, useRef } from "react";
 import type { PublicQuestion } from "@/shared/contracts/session";
 import type { WatchAction } from "../state/watch.actions";
 import type { SessionWriterApi } from "./useSessionWriter";
-import type { YTPlayer } from "./useYouTubePlayer";
+import type { YouTubePlayerAdapter } from "../player/youtube-player-adapter";
 import { WatchTracker } from "./watch-tracker-core";
 
 export interface UseWatchTrackerOptions {
-  player: YTPlayer | null;
+  player: YouTubePlayerAdapter | null;
   /** Only runs while the reducer thinks we're playing. */
   active: boolean;
   /** Identifies the current session — the tracker resets when this changes (a fresh mount, or a
@@ -27,11 +27,11 @@ export interface UseWatchTrackerOptions {
 /**
  * Drives the rAF anti-cheat loop (plan §6) and the TICK cadence (plan §4.2: produced every 1s,
  * flushed every 5s) via a `WatchTracker`. Positions are sent unrounded, straight from
- * `player.getCurrentTime()`.
+ * `player.currentTime()`.
  */
 export interface WatchTrackerApi {
   /** True while a gate-hit PAUSE write is in flight — WatchPage's onStateChange(PAUSED) handler
-   * uses this to skip the duplicate PAUSE the tracker's own player.pauseVideo() call triggers. */
+   * uses this to skip the duplicate PAUSE the tracker's own player.pause() call triggers. */
   isGateInFlight: () => boolean;
   /** The tracker's local high-water mark (display only — server furthestSec stays authoritative
    * for anti-cheat; see usePlayerProgress). */
@@ -83,17 +83,17 @@ export function useWatchTracker({
       const frameDtSec = (now - lastFrameAt) / 1000;
       lastFrameAt = now;
 
-      const currentTime = player.getCurrentTime();
+      const currentTime = player.currentTime();
       const { quizzes, passedQuestionIds } = latest.current;
 
       if (!gateInFlight.current) {
         const decision = tracker.onFrame(currentTime, frameDtSec, quizzes, passedQuestionIds);
         if (decision.kind === "seek_guard") {
-          player.seekTo(decision.seekTo, true);
+          player.seekTo(decision.seekTo, { resume: true });
           dispatch({ type: "CLIENT_SEEK_GUARD", furthestSec: decision.seekTo });
         } else if (decision.kind === "gate") {
           gateInFlight.current = true;
-          player.pauseVideo();
+          player.pause();
           writer.queueTick(currentTime);
           dispatch({ type: "QUIZ_GATE_HIT", questionId: decision.questionId });
           void writer.sendImmediate("PAUSE", currentTime).then((result) => {
@@ -122,7 +122,7 @@ export function useWatchTracker({
         if (!result) return;
         const rejected = result.results.some((r) => !r.accepted);
         if (rejected) {
-          const jumpSec = Math.abs(player.getCurrentTime() - result.positionSec);
+          const jumpSec = Math.abs(player.currentTime() - result.positionSec);
           dispatch({ type: "PROGRESS_REJECTED", positionSec: result.positionSec, furthestSec: result.furthestSec, jumpSec });
         }
       });

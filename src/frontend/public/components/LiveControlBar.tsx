@@ -2,11 +2,11 @@
 
 import { ControlBar } from "./ControlBar";
 import { usePlayerProgress } from "../hooks/usePlayerProgress";
-import type { YTPlayer } from "../hooks/useYouTubePlayer";
+import type { YouTubePlayerAdapter } from "../player/youtube-player-adapter";
 import type { PublicQuestion } from "@/shared/contracts/session";
 
 export interface LiveControlBarProps {
-  player: YTPlayer | null;
+  player: YouTubePlayerAdapter | null;
   active: boolean;
   fallbackPositionSec: number;
   fallbackFurthestSec: number;

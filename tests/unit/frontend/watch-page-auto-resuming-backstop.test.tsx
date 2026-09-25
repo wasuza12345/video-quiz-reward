@@ -13,7 +13,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnswerResponse, SessionCreateResponse } from "@/shared/contracts/session";
 import type { MeResponse } from "@/shared/contracts/video";
-import { YT_PLAYER_STATE } from "@/frontend/public/hooks/useYouTubePlayer";
+import { YT_PLAYER_STATE } from "@/frontend/public/player/youtube-player-types";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 

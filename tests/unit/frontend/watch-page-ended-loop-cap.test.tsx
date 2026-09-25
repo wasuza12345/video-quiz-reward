@@ -34,7 +34,7 @@ import type { ClientEvent, SessionSnapshot, VideoRules } from "@/backend/domain/
 import type { EventsApplyResponse, SessionCreateResponse } from "@/shared/contracts/session";
 import type { MeResponse } from "@/shared/contracts/video";
 import type { ClientEventType } from "@/shared/constants/session";
-import { YT_PLAYER_STATE } from "@/frontend/public/hooks/useYouTubePlayer";
+import { YT_PLAYER_STATE } from "@/frontend/public/player/youtube-player-types";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
