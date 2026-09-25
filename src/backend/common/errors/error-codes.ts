@@ -22,6 +22,9 @@ export const ERROR_CODES = [
   "USER_NOT_FOUND",
   "SESSION_NOT_FOUND",
   "INVALID_TRANSITION",
+  // ---------- opaque fallback ----------
+  /** Any thrown error that isn't an AppError — logged server-side, never leaked to the client. */
+  "INTERNAL_ERROR",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -46,4 +49,5 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   USER_NOT_FOUND: 404,
   SESSION_NOT_FOUND: 404,
   INVALID_TRANSITION: 409,
+  INTERNAL_ERROR: 500,
 };

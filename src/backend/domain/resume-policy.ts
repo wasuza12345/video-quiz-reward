@@ -3,8 +3,6 @@ import type { SessionState } from "@/shared/constants/session";
 import type { VideoStatus } from "@/shared/constants/video";
 import type { EventRecord, SessionSnapshot } from "./types";
 
-export type { VideoStatus };
-
 export interface ExistingSession {
   id: string;
   isReplay: boolean;

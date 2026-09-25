@@ -1,5 +1,6 @@
-import type { VideoStatus } from "@/backend/domain/resume-policy";
 import type { AuditContext } from "@/backend/common/audit/audit-log";
+import type { AdminQuestionDetail } from "@/shared/contracts/admin";
+import type { VideoStatus } from "@/shared/constants/video";
 
 /** Internal row shape read by the repository; not the public response shape (see video.service.ts). */
 export interface VideoRow {
@@ -20,16 +21,8 @@ export interface AdminVideoRow extends VideoRow {
   sessionCount: number;
 }
 
-export interface AdminQuestionRow {
-  id: string;
-  triggerSec: number;
-  prompt: string;
-  correctChoice: string;
-  choices: { label: string; text: string }[];
-}
-
 export interface AdminVideoWithQuestions extends AdminVideoRow {
-  questions: AdminQuestionRow[];
+  questions: AdminQuestionDetail[];
 }
 
 export interface CreateVideoInput {

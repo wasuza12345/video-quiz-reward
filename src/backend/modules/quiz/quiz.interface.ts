@@ -1,4 +1,5 @@
 import type { AuditContext } from "@/backend/common/audit/audit-log";
+import type { AdminQuestionDetail } from "@/shared/contracts/admin";
 import type { PublicChoice, PublicQuestion } from "@/shared/contracts/session";
 
 export interface AnswerQuestion {
@@ -8,14 +9,10 @@ export interface AnswerQuestion {
   labels: string[];
 }
 
-/** The admin-facing row — includes `correctChoice` (plan §4.5). */
-export interface AdminQuestionRow {
-  id: string;
+/** The admin-facing row — same shape as the public AdminQuestionDetail response plus the
+ * videoId the repository/service layer needs internally (plan §4.5). */
+export interface AdminQuestionRow extends AdminQuestionDetail {
   videoId: string;
-  triggerSec: number;
-  prompt: string;
-  correctChoice: string;
-  choices: PublicChoice[];
 }
 
 export interface CreateQuestionInput {

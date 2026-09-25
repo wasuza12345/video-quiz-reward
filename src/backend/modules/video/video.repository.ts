@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/backend/lib/prisma";
-import type { VideoStatus } from "@/backend/domain/resume-policy";
+import { VIDEO_STATUSES, type VideoStatus } from "@/shared/constants/video";
 import { auditLogEntry } from "@/backend/common/audit/audit-log";
-import type { AdminQuestionRow, AdminVideoRow, AdminVideoWithQuestions, CreateVideoInput, UpdateVideoInput, VideoRepository, VideoRow } from "./video.interface";
+import type { AdminQuestionDetail } from "@/shared/contracts/admin";
+import type { AdminVideoRow, AdminVideoWithQuestions, CreateVideoInput, UpdateVideoInput, VideoRepository, VideoRow } from "./video.interface";
+
+function parseVideoStatus(status: string): VideoStatus {
+  if (!(VIDEO_STATUSES as readonly string[]).includes(status)) throw new Error(`unknown video status from DB: ${status}`);
+  return status as VideoStatus;
+}
 
 function toRow(v: {
   id: string;
@@ -22,7 +28,7 @@ function toRow(v: {
     channelName: v.channelName,
     durationSec: v.durationSec,
     rewardPoints: v.rewardPoints,
-    status: v.status as VideoStatus,
+    status: parseVideoStatus(v.status),
     isFeatured: v.isFeatured,
     questionCount: v._count.questions,
   };
@@ -75,7 +81,7 @@ export function createVideoRepository(): VideoRepository {
         },
       });
       if (!video) return null;
-      const questions: AdminQuestionRow[] = video.questions.map((q) => ({
+      const questions: AdminQuestionDetail[] = video.questions.map((q) => ({
         id: q.id,
         triggerSec: q.triggerSec,
         prompt: q.prompt,

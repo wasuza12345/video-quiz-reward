@@ -3,10 +3,10 @@ import { AppError } from "@/backend/common/errors/app-error";
 import type { AuditContext } from "@/backend/common/audit/audit-log";
 import { fetchYoutubeOembed } from "@/backend/lib/youtube";
 import { parseYoutubeId } from "@/shared/youtube-id";
-import type { AdminCreateVideoBody, AdminUpdateVideoBody, AdminVideoDetail, AdminVideoListItem, Paged } from "@/shared/contracts/admin";
+import type { AdminCreateVideoBody, AdminQuestionDetail, AdminUpdateVideoBody, AdminVideoDetail, AdminVideoListItem, Paged } from "@/shared/contracts/admin";
 import type { PublicVideoItem, VideoListResponse } from "@/shared/contracts/video";
 import type { RewardRepository } from "../reward/reward.interface";
-import type { AdminQuestionRow, AdminVideoRow, AdminVideoWithQuestions, VideoRepository, VideoRow } from "./video.interface";
+import type { AdminVideoRow, AdminVideoWithQuestions, VideoRepository, VideoRow } from "./video.interface";
 
 function toPublicItem(row: VideoRow, rewarded: boolean): PublicVideoItem {
   return {
@@ -49,7 +49,7 @@ function isUniqueViolation(err: unknown): boolean {
 /** 0 < triggerSec < durationSec - 2 (plan §7) — re-checked whenever durationSec itself changes,
  * since a question valid under the old duration can silently become
  * unreachable under a shorter one. */
-function assertQuestionsFitDuration(questions: AdminQuestionRow[], durationSec: number): void {
+function assertQuestionsFitDuration(questions: AdminQuestionDetail[], durationSec: number): void {
   for (const q of questions) {
     if (!(q.triggerSec > 0 && q.triggerSec < durationSec - 2)) {
       throw new AppError("INVALID_TRIGGER", `question at ${q.triggerSec}s no longer fits within the video's duration`, { questionId: q.id, triggerSec: q.triggerSec, durationSec });
@@ -60,7 +60,7 @@ function assertQuestionsFitDuration(questions: AdminQuestionRow[], durationSec: 
 /** Full re-validation before publish — a video must never go live with a
  * question nobody can ever reach or correctly answer, which would make canEnd impossible (plan
  * §6: the quiz gate blocks progress) or the reward unattainable. */
-function assertQuestionsPublishable(questions: AdminQuestionRow[], durationSec: number): void {
+function assertQuestionsPublishable(questions: AdminQuestionDetail[], durationSec: number): void {
   assertQuestionsFitDuration(questions, durationSec);
   for (const q of questions) {
     if (q.choices.length < 2 || q.choices.length > 4) {
