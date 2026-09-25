@@ -255,8 +255,11 @@ describe("YouTubePreview.seekTo: a repeat click before the unstick resolves", ()
 // Reviewer MINOR: if the muted play never yields PLAYING at all (autoplay blocked), the unstick
 // must not stay armed forever — it must not leave the preview muted, and it must not swallow a
 // later, genuinely user-driven Play. Must fail on 9347a02 (no backstop existed at all).
-describe("YouTubePreview.seekTo: PLAYING never arrives", () => {
-  it("the ~3s backstop restores the mute and disarms; a later real Play isn't paused", async () => {
+describe.each([
+  ["still UNSTARTED (never even started buffering)", false],
+  ["BUFFERING (a slow CUED → PLAYING transition)", true],
+])("YouTubePreview.seekTo: PLAYING never arrives — %s at the backstop", (_label, startBuffering) => {
+  it("the ~3s backstop pauses the still-pending forced play, then restores the mute — it must not end up playing with sound", async () => {
     nextInitialState = YT_PLAYER_STATE.UNSTARTED;
     const { handle, player } = await renderAndGetHandle();
 
@@ -264,13 +267,27 @@ describe("YouTubePreview.seekTo: PLAYING never arrives", () => {
     expect(player.isMuted(), "sanity: muted to force the play").toBe(true);
     expect(player.unMuteCallCount, "must not have restored yet — well under the backstop's patience").toBe(0);
 
-    await wait(3_100); // past the ~3s backstop; PLAYING (autoplay blocked) never arrived
+    if (startBuffering) player.simulateBuffering(); // a slow load: still mid-transition, no PLAYING yet
 
-    expect(player.unMuteCallCount, "the backstop must restore the mute on its own").toBe(1);
+    await wait(3_100); // past the ~3s backstop; the forced play never confirmed PLAYING
+
+    // Reviewer follow-up on this same fix: the backstop used to only unmute, leaving the
+    // still-pending forced play free to land (with sound, now unmuted) whenever it eventually
+    // confirmed. It must proactively pause it first, while it's still muted.
+    expect(player.pauseVideoCallCount, "the backstop must pause the still-pending forced play, not just unmute it").toBe(1);
+    expect(player.getPlayerState(), "must end up genuinely paused, not silently left playing").toBe(YT_PLAYER_STATE.PAUSED);
+    expect(player.unMuteCallCount, "must still restore the mute").toBe(1);
     expect(player.isMuted(), "must end up unmuted").toBe(false);
+  });
 
-    // A later, genuinely user-driven Play must not be treated as this (already-resolved) unstick's
-    // own confirmation and get silently paused.
+  it("does not swallow a later, genuinely user-driven Play once the backstop has already resolved everything", async () => {
+    nextInitialState = YT_PLAYER_STATE.UNSTARTED;
+    const { handle, player } = await renderAndGetHandle();
+
+    handle.seekTo(10);
+    if (startBuffering) player.simulateBuffering();
+    await wait(3_100);
+
     const pauseCountBefore = player.pauseVideoCallCount;
     act(() => player.simulatePlaying());
     await flush();

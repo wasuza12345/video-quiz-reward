@@ -104,6 +104,14 @@ export function YouTubePreview({ youtubeId, onReady, onDuration, onTimeUpdate }:
           clearUnstickBackstop();
           unstickBackstopRef.current = setTimeout(() => {
             unstickBackstopRef.current = null;
+            // Our forced playVideo() above can still be genuinely pending here (a slow CUED →
+            // BUFFERING transition past our patience window) — if it lands AFTER we've already
+            // restored the mute below, the preview ends up audibly playing while the admin edits.
+            // Pause it first, while it's still muted.
+            const stuckState = playerRef.current?.getPlayerState();
+            if (stuckState === YT_PLAYER_STATE.BUFFERING || stuckState === YT_PLAYER_STATE.UNSTARTED) {
+              playerRef.current?.pauseVideo();
+            }
             restoreUnstickMute();
           }, UNSTICK_BACKSTOP_MS);
         } else {
