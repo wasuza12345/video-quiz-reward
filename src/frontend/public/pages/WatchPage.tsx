@@ -199,6 +199,10 @@ export function WatchPage({ videoId }: WatchPageProps) {
         }
         setAutoResuming(false);
         clearAutoResumingBackstop();
+        // The PAUSED event's own position is itself stale on real YouTube — the ~0.27s pause-
+        // settle creep only becomes visible here, at the next genuine PLAYING read. Bounded the
+        // same way as the PAUSED call below (planner review round 2: "lift guard mark on resume").
+        trackerApi.noteSettled(currentTime);
         dispatch({ type: "PLAY_CLICKED" });
         void writer.sendImmediate("PLAY", currentTime);
       } else if (ytState === YT_PLAYER_STATE.BUFFERING || ytState === YT_PLAYER_STATE.UNSTARTED) {
@@ -210,10 +214,9 @@ export function WatchPage({ videoId }: WatchPageProps) {
       } else if (ytState === YT_PLAYER_STATE.PAUSED || ytState === YT_PLAYER_STATE.CUED) {
         clearAutoplayGuard();
         if (ytState === YT_PLAYER_STATE.CUED) return;
-        // YouTube keeps playing ~0.27s past the pause click before this event lands — trust this
-        // confirmed position outright so the tracker's high-water mark doesn't get stranded just
-        // below it (planner review: "pause-resume no false resync").
-        trackerApi.notePaused(currentTime);
+        // Trust the (possibly stale) PAUSED position outright too — see noteSettled's own comment
+        // and the PLAYING branch above for why both call sites matter.
+        trackerApi.noteSettled(currentTime);
         setAutoResuming(false);
         clearAutoResumingBackstop();
         // The gate-hit flow (useWatchTracker) already calls player.pauseVideo() and sends its

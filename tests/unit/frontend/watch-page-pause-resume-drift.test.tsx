@@ -1,22 +1,24 @@
 // @vitest-environment jsdom
 //
-// Planner review: real production bug (dev.db evidence: PAUSE 6.91 -> PLAY 7.18 -> a second,
-// corrective PLAY ~7.11 about 1.5s later) — every honest pause/resume mid-video triggered a
-// spurious resync toast + backward snap, even though the server accepted every single event
-// (softRejectCount=0, no rejections). Root cause: YouTube's PAUSED state change lands ~0.27s
-// after the underlying player has already coasted forward past it — useWatchTracker's rAF loop
-// only runs while `active` (state.status === "playing"), so by the time PAUSED fires and status
-// flips to "paused", the loop stops and the tracker's local high-water mark is left ~0.27s BEHIND
-// wherever the player actually settled. That's already past ADVANCE_FLOOR_SEC (0.25s), so on
-// resume every frame lands in onFrame's "not yet trusted" middle band forever — the gap only
-// grows until it crosses SEEK_GUARD_SLACK_SEC (1.5s) and the seek guard snaps back.
+// Planner review, round 2: the round-1 fix (WatchTracker.notePaused, called from onStateChange
+// PAUSED only) still reproduced in the human's real Chrome — dev.db session 5556d645 showed the
+// exact same pattern (PAUSE 2.28 -> PLAY 2.54 -> a corrective PLAY ~2.48 about 1.5s later),
+// repeated across 5 cycles, softRejectCount=0, no rejections.
 //
-// This renders the REAL WatchPage against a REAL useWatchTracker/WatchTracker (unlike
-// watch-page-autoplay-guard.test.tsx, which mocks the tracker out entirely — this test exists
-// specifically to prove the tracker's real anti-cheat loop, driven by real rAF, doesn't misfire).
-// DriftingPlayer models the ~0.27s YouTube pause lag: pauseVideo() freezes the reported position
-// 0.27s AHEAD of wherever it was actually caught by the last honest frame, exactly reproducing the
-// gap without needing any deeper opinion on the real IFrame API's own internal mechanics.
+// The round-1 model was backwards: it put the ~0.27s YouTube pause-settle creep INTO the PAUSED
+// event's own reported position. In real YouTube, getCurrentTime() at PAUSED is itself STALE —
+// the creep isn't visible yet there; it only shows up at the NEXT genuine PLAYING read, once the
+// player actually resumes. notePaused(2.28) was therefore a no-op (2.28 already matched the
+// high-water mark), and the resume's own PLAYING at 2.54 was never trusted either — landing every
+// frame since in onFrame's "not yet trusted" middle band, same bug, different call site.
+//
+// Fix: WatchTracker.notePaused -> noteSettled, called from BOTH onStateChange(PAUSED) *and* the
+// genuine (non-swallowed) PLAYING branch. DriftingPlayer here reports the drift-free position at
+// PAUSED and reveals the +0.27s creep only at the next playVideo() call, matching the real
+// sequence above. This renders the REAL WatchPage against a REAL useWatchTracker/WatchTracker
+// (unlike watch-page-autoplay-guard.test.tsx, which mocks the tracker out entirely) — this test
+// exists specifically to prove the tracker's real anti-cheat loop, driven by real rAF, doesn't
+// misfire.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -75,8 +77,9 @@ vi.mock("@/frontend/public/services/api", () => ({
 
 const PAUSE_DRIFT_SEC = 0.27;
 
-/** Models the real YouTube IFrame API's pause lag: by the time onStateChange(PAUSED) fires, the
- * reported position is ~0.27s ahead of wherever the last honest frame caught it — see file header. */
+/** Models the real YouTube IFrame API's pause-settle creep faithfully: PAUSED reports the clean,
+ * un-drifted position (whatever the last honest frame caught); the +0.27s creep is only revealed
+ * at the NEXT playVideo() call's own PLAYING report — see file header. */
 class DriftingPlayer {
   static instances: DriftingPlayer[] = [];
 
@@ -84,6 +87,8 @@ class DriftingPlayer {
   private events: { onReady: () => void; onStateChange: (e: { data: number }) => void };
   private baseTime = 0;
   private segmentStartMs: number | null = null;
+  /** The hidden creep accrued while paused, not yet revealed via any reported position. */
+  private pendingDrift = 0;
   seekToCallCount = 0;
 
   constructor(container: HTMLElement, opts: { events: typeof DriftingPlayer.prototype.events }) {
@@ -100,12 +105,15 @@ class DriftingPlayer {
   }
 
   playVideo() {
+    this.baseTime += this.pendingDrift; // the creep becomes visible only now
+    this.pendingDrift = 0;
     this.segmentStartMs = performance.now();
     this.events.onStateChange({ data: YT_PLAYER_STATE.PLAYING });
   }
 
   pauseVideo() {
-    this.baseTime = this.getCurrentTime() + PAUSE_DRIFT_SEC;
+    this.baseTime = this.getCurrentTime(); // PAUSED's own read is stale — no drift added here
+    this.pendingDrift = PAUSE_DRIFT_SEC;
     this.segmentStartMs = null;
     this.events.onStateChange({ data: YT_PLAYER_STATE.PAUSED });
   }
@@ -113,6 +121,7 @@ class DriftingPlayer {
   seekTo(seconds: number) {
     this.seekToCallCount += 1;
     this.baseTime = seconds;
+    this.pendingDrift = 0;
     if (this.segmentStartMs !== null) this.segmentStartMs = performance.now();
   }
 
@@ -170,7 +179,7 @@ function resyncToastVisible(): boolean {
   return Array.from(container.querySelectorAll('[role="status"]')).some((el) => el.textContent === copy.toast.resync);
 }
 
-describe("WatchPage + real WatchTracker: pause/resume drift (planner review, must fail on 8aa7e90)", () => {
+describe("WatchPage + real WatchTracker: pause/resume drift (planner review round 2, must fail on 96893d3)", () => {
   it("5 pause/resume cycles with a ~0.27s YouTube pause-settle drift trigger no seek guard and no resync toast", async () => {
     const { WatchPage } = await import("@/frontend/public/pages/WatchPage");
     act(() => {
@@ -186,23 +195,28 @@ describe("WatchPage + real WatchTracker: pause/resume drift (planner review, mus
     await flush(); // PLAYING -> PLAY_CLICKED -> status "playing" -> tracker's rAF loop starts (active === true)
 
     for (let cycle = 0; cycle < 5; cycle++) {
-      await wait(300); // a bit of honest playback before pausing
-      act(() => toggleButton().click()); // pause — DriftingPlayer applies the +0.27s settle drift
+      act(() => toggleButton().click()); // pause — settles cleanly; the +0.27s creep stays hidden
       await flush();
       expect(resyncToastVisible(), `cycle ${cycle}: no resync toast right after pausing`).toBe(false);
 
       await wait(150); // a beat while genuinely paused
-      act(() => toggleButton().click()); // resume
+      act(() => toggleButton().click()); // resume — reveals the +0.27s creep via this PLAYING read
+      await flush();
+      expect(player!.seekToCallCount, `cycle ${cycle}: no corrective seekTo() right after resuming`).toBe(0);
+
+      // Every honest frame from here needs to be tracked normally, not left stuck in onFrame's
+      // "not yet trusted" middle band. If the resume's drift wasn't absorbed (the PLAYING-side
+      // noteSettled call missing, as on 96893d3), this is exactly the window — a single
+      // continuous "playing" stretch with no intervening pause to (re-)settle it — where the gap
+      // between the stuck high-water mark and the still-advancing currentTime crosses
+      // SEEK_GUARD_SLACK_SEC (1.5s) and the seek guard snaps back. 1.6s real time > 1.5s - 0.27s
+      // with margin for rAF/test scheduling jitter.
+      await wait(1_600);
+      act(() => toggleButton().click()); // pause again for the next cycle
       await flush();
     }
 
-    // One more stretch of honest playback after the last resume — this is exactly the window
-    // where the unfixed tracker's frozen high-water mark would finally cross SEEK_GUARD_SLACK_SEC
-    // and snap back.
-    await wait(400);
-    await flush();
-
     expect(player!.seekToCallCount, "no CLIENT_SEEK_GUARD corrective seekTo() call at any point").toBe(0);
     expect(resyncToastVisible(), "no resync toast at any point").toBe(false);
-  }, 20_000);
+  }, 30_000);
 });

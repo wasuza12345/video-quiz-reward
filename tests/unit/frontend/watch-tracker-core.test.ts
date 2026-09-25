@@ -56,10 +56,10 @@ describe("WatchTracker.onFrame — anti-cheat per-frame checks (plan §6)", () =
   });
 });
 
-describe("WatchTracker.notePaused — trust a confirmed PAUSED position outright (planner review: pause-resume false resync)", () => {
-  it("raises the high-water mark to the paused position, then honest playback from there advances normally with no seek_guard", () => {
+describe("WatchTracker.noteSettled — trust a confirmed PAUSED/genuine-PLAYING position outright (planner review: pause-resume false resync, rounds 1+2)", () => {
+  it("raises the high-water mark to the settled position, then honest playback from there advances normally with no seek_guard", () => {
     const t = new WatchTracker(6.91);
-    t.notePaused(7.18); // YouTube's ~0.27s pause lag landed currentTime ahead of maxReached
+    t.noteSettled(7.18); // e.g. the PLAYING read revealing the ~0.27s pause-settle creep
     expect(t.maxReached).toBe(7.18);
 
     const d = t.onFrame(7.3, 0.016, [], []);
@@ -69,14 +69,28 @@ describe("WatchTracker.notePaused — trust a confirmed PAUSED position outright
 
   it("does not lift the mark past SEEK_GUARD_SLACK_SEC — a devtools seek while paused still can't use this to escape the guard", () => {
     const t = new WatchTracker(6.91);
-    t.notePaused(6.91 + 5); // far beyond the 1.5s slack
+    t.noteSettled(6.91 + 5); // far beyond the 1.5s slack
     expect(t.maxReached).toBe(6.91);
   });
 
-  it("never lowers the high-water mark (a pause reported behind it is simply ignored)", () => {
+  it("never lowers the high-water mark (a settled position reported behind it is simply ignored)", () => {
     const t = new WatchTracker(10);
-    t.notePaused(4);
+    t.noteSettled(4);
     expect(t.maxReached).toBe(10);
+  });
+
+  it("replays the real production sequence (round 2 regression): the PAUSED read is itself stale, the drift only shows at the next PLAYING", () => {
+    // dev.db session 5556d645, cycle 1: PAUSE reports 2.28 (stale — matches maxReached already),
+    // the resume's PLAYING reports 2.54 (the ~0.26s creep, revealed only now) — noteSettled at
+    // BOTH call sites is what makes this a no-op instead of a stuck middle-band gap.
+    const t = new WatchTracker(2.28);
+    t.noteSettled(2.28); // the PAUSED call — no-op, already at the mark
+    expect(t.maxReached).toBe(2.28);
+    t.noteSettled(2.54); // the PLAYING call — this is the one that actually has to do the lifting
+    expect(t.maxReached).toBe(2.54);
+
+    const d = t.onFrame(2.6, 0.016, [], []);
+    expect(d).toEqual({ kind: "none" });
   });
 });
 

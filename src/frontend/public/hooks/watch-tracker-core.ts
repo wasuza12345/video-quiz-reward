@@ -67,16 +67,19 @@ export class WatchTracker {
   }
 
   /**
-   * Call when the player reports a real PAUSED state, with its actual paused position. YouTube
-   * keeps playing for ~0.27s after a pause click before the state change actually lands — by the
-   * time it does, currentTime can already be past ADVANCE_FLOOR_SEC ahead of the high-water mark,
-   * landing every frame since in onFrame's "not yet trusted" middle band forever (nothing ever
-   * advances maxReachedSec again). A confirmed pause is exactly the moment we can trust that
-   * position outright — it's not a rate-limited per-frame guess, it's where the player actually,
-   * definitely stopped. Bounded by SEEK_GUARD_SLACK_SEC so a devtools seek-while-paused can't use
-   * this to lift the high-water mark past what the seek guard would otherwise catch.
+   * Call whenever the player reports a real, settled position we can trust outright: a genuine
+   * PAUSED state, or the next genuine (non-swallowed) PLAYING after a resume. YouTube's own
+   * getCurrentTime() at the PAUSED event is itself STALE — the ~0.27s creep past the click isn't
+   * visible yet there; it only shows up at the NEXT PLAYING read, once the player actually
+   * resumes (confirmed against real YouTube, not just the IFrame API docs — see
+   * watch-page-pause-resume-drift.test.tsx). Calling this from both places means whichever one
+   * reports the drift first raises the mark; without the PLAYING call, a pause/resume with no
+   * intervening onFrame() tick would leave the mark stuck exactly at the stale PAUSED position,
+   * landing every frame since in onFrame's "not yet trusted" middle band forever. Bounded by
+   * SEEK_GUARD_SLACK_SEC so a devtools seek can't use either call to lift the mark past what the
+   * seek guard would otherwise catch.
    */
-  notePaused(currentTime: number): void {
+  noteSettled(currentTime: number): void {
     if (currentTime > this.maxReachedSec && currentTime - this.maxReachedSec <= SEEK_GUARD_SLACK_SEC) {
       this.maxReachedSec = currentTime;
     }

@@ -16,8 +16,11 @@ import { YT_PLAYER_STATE } from "@/frontend/public/hooks/useYouTubePlayer";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
+// A spy, not a no-op: the swallowed-PLAYING test below asserts this is never called for a
+// spurious PLAYING (planner review round 2 — noteSettled must only trust a GENUINE play/pause).
+const { noteSettledSpy } = vi.hoisted(() => ({ noteSettledSpy: vi.fn() }));
 vi.mock("@/frontend/public/hooks/useWatchTracker", () => ({
-  useWatchTracker: () => ({ isGateInFlight: () => false, getMaxReached: () => 0, notePaused: () => {} }),
+  useWatchTracker: () => ({ isGateInFlight: () => false, getMaxReached: () => 0, noteSettled: noteSettledSpy }),
 }));
 
 const ME_RESPONSE: MeResponse = { totalPoints: 0, rewardedVideoIds: [] };
@@ -122,6 +125,7 @@ beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   FakePlayer.instances = [];
   FakePlayer.playVideoFiresPlaying = true;
+  noteSettledSpy.mockClear();
   (window as unknown as { YT: unknown }).YT = { Player: FakePlayer };
   // jsdom implements <dialog> as a plain element with no showModal()/close() — Modal.tsx (a native
   // <dialog>) needs at least a no-crash stub to render QuizModal at all. Unconditional: this suite
@@ -219,6 +223,9 @@ describe("WatchPage autoplay guard one-shot behaviour (planner follow-up review)
     // the guard's own tell, independent of reducer state (PLAY_CLICKED is itself a no-op while
     // quiz_open, so a status/DOM check here couldn't distinguish swallowed from not-swallowed).
     expect(instance.pauseVideoCallCount, "a spurious PLAYING while armed must be paused straight back").toBe(1);
+    // A swallowed PLAYING is not a genuine settle — must not raise the tracker's high-water mark
+    // (planner review round 2's acceptance: "the swallowed-PLAYING path doesn't call it").
+    expect(noteSettledSpy, "noteSettled must not be called for a spurious/swallowed PLAYING").not.toHaveBeenCalled();
   }, 15_000);
 
   it("BUFFERING while armed does not disarm the guard: a later spurious PLAYING is still swallowed", async () => {
