@@ -392,6 +392,18 @@ dialog.modal-sheet {
 @media (min-width: 1025px) {
   .admin-sidebar {
     display: flex;
+    /* Human report: on a long page (a big table), the sidebar used to scroll away with the
+       content. position:sticky (not fixed — that would need a content margin/offset instead)
+       keeps it pinned to the viewport as the CONTENT COLUMN scrolls; a fixed height is what lets
+       the nav's flex:1 push the email/logout footer to the visual bottom instead of the bottom of
+       an ever-growing row. 100dvh (falls back to 100vh where unsupported) accounts for mobile
+       browser chrome, though this rule is desktop-only anyway. overflow-y:auto lets a nav taller
+       than the viewport scroll within the sidebar itself, rather than pushing the footer off. */
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
   }
   .admin-topbar {
     display: none;

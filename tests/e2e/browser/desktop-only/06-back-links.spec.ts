@@ -76,3 +76,35 @@ test("back links: admin sub-pages and the public watch page each show one, at 12
   await watchBackLink.click();
   await page.waitForURL(/\/$/);
 });
+
+test("admin sidebar stays sticky on a long page (1280); the mobile topbar/drawer are unchanged (390)", async ({ page }) => {
+  // 18+ real users (page size is 20) so /admin/users page 1 is genuinely taller than the viewport.
+  const video = await findVideoByYoutubeId(new UserSession(page.request), BRIEF_VIDEO_YOUTUBE_ID);
+  for (let i = 0; i < 18; i++) {
+    await createSession(new UserSession(page.request), video.id);
+  }
+
+  await adminLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  await page.setViewportSize(DESKTOP);
+  await page.goto("/admin/users");
+
+  const logoutButton = page.getByRole("button", { name: "ออกจากระบบ" });
+  const dashboardLink = page.getByRole("link", { name: "แดชบอร์ด" });
+  await expect(logoutButton).toBeVisible();
+  await expect(dashboardLink).toBeVisible();
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const scrolledY = await page.evaluate(() => window.scrollY);
+  expect(scrolledY, "sanity: the page must have actually needed to scroll (18+ users makes the list tall enough)").toBeGreaterThan(0);
+
+  await expect(logoutButton, "the sidebar's logout button must still be in the viewport after scrolling a long list").toBeInViewport();
+  await expect(dashboardLink, "the sidebar nav must still be in the viewport after scrolling a long list").toBeInViewport();
+
+  // 390: mobile topbar/drawer behaviour must be unchanged by the sticky-sidebar fix.
+  await page.setViewportSize(MOBILE);
+  await page.reload();
+  await expect(page.locator(".admin-topbar")).toBeVisible();
+  await expect(page.locator(".admin-sidebar")).toBeHidden();
+  await page.getByRole("button", { name: "เปิดเมนู" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
