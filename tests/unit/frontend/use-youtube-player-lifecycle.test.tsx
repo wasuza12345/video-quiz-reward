@@ -51,7 +51,7 @@ class FakePlayer {
 }
 
 function Harness({ youtubeId }: { youtubeId: string }) {
-  const { containerRef } = useYouTubePlayer({ youtubeId, title: "t", onStateChange: () => {}, onError: () => {} });
+  const { containerRef } = useYouTubePlayer({ youtubeId, title: "t", onPlay: () => {}, onPause: () => {}, onEnded: () => {}, onError: () => {} });
   // Mirrors VideoPlayer.tsx: containerRef's div is nested inside a wrapper React itself always
   // owns and never hands to YT.Player. Without that wrapper, React's own unmount would try to
   // remove the containerRef div directly from this test's root — but FakePlayer (like the real

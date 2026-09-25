@@ -6,7 +6,7 @@
 // mechanism, not a YouTube quirk the adapter owns.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { YouTubePlayerAdapter, type YouTubePlayerAdapterCallbacks } from "@/frontend/public/player/youtube-player-adapter";
-import { YT_PLAYER_STATE, type YTPlayer } from "@/frontend/public/hooks/useYouTubePlayer";
+import { YT_PLAYER_STATE, type YTPlayer } from "@/frontend/public/player/youtube-player-types";
 
 class FakePlayer implements YTPlayer {
   playVideoCallCount = 0;
@@ -147,6 +147,20 @@ describe("YouTubePlayerAdapter — autoplay-after-seek guard", () => {
     adapter.handleStateChange(YT_PLAYER_STATE.PLAYING);
 
     expect(player.pauseVideoCallCount, "play() must have disarmed the stale guard").toBe(0);
+    expect(cb.onPlay).toHaveBeenCalledWith(10);
+  });
+
+  it("resetGuard() drops an armed guard without touching the player, so a later PLAYING is real", () => {
+    const player = new FakePlayer();
+    const cb = callbacks();
+    const adapter = new YouTubePlayerAdapter(player, cb);
+
+    adapter.seekTo(10, { resume: false }); // arms the guard, e.g. for a session that's about to be replaced
+    adapter.resetGuard();
+
+    player.setState(YT_PLAYER_STATE.PLAYING, 10);
+    adapter.handleStateChange(YT_PLAYER_STATE.PLAYING);
+    expect(player.pauseVideoCallCount, "resetGuard() must have disarmed the guard").toBe(0);
     expect(cb.onPlay).toHaveBeenCalledWith(10);
   });
 });

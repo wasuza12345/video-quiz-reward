@@ -1,35 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { YouTubePlayerAdapter } from "../player/youtube-player-adapter";
+import { YT_PLAYER_STATE } from "../player/youtube-player-types";
+import type { YTNamespace, YTPlayer } from "../player/youtube-player-types";
 
-// Minimal shape of the bits of the YouTube IFrame API this app uses — no @types/youtube dependency.
-export interface YTPlayer {
-  playVideo(): void;
-  pauseVideo(): void;
-  seekTo(seconds: number, allowSeekAhead?: boolean): void;
-  getCurrentTime(): number;
-  getPlayerState(): number;
-  setPlaybackRate(rate: number): void;
-  destroy(): void;
-}
-
-export const YT_PLAYER_STATE = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 } as const;
-
-export interface YTNamespace {
-  Player: new (
-    el: HTMLElement | string,
-    opts: {
-      videoId: string;
-      playerVars: Record<string, number>;
-      events: {
-        onReady: () => void;
-        onStateChange: (e: { data: number }) => void;
-        onError: () => void;
-        onPlaybackRateChange: () => void;
-      };
-    },
-  ) => YTPlayer;
-}
+export { YT_PLAYER_STATE };
+export type { YTNamespace, YTPlayer };
 
 declare global {
   interface Window {
@@ -65,13 +42,21 @@ export function loadYouTubeIframeApi(): Promise<YTNamespace> {
 export interface UseYouTubePlayerOptions {
   youtubeId: string;
   title: string;
-  onStateChange: (state: number) => void;
+  onPlay: (positionSec: number) => void;
+  onPause: (positionSec: number) => void;
+  onEnded: (positionSec: number) => void;
   onError: () => void;
 }
 
 export interface UseYouTubePlayerResult {
   containerRef: React.RefObject<HTMLDivElement | null>;
-  player: YTPlayer | null;
+  /** The quirk-free command surface (play/pause/seekTo/currentTime) — what WatchPage itself
+   * should call. */
+  player: YouTubePlayerAdapter | null;
+  /** The raw YT.Player, for the handful of consumers (useWatchTracker, usePlayerProgress via
+   * LiveControlBar) that predate the adapter and only ever needed a plain read/seek/pause surface
+   * — unchanged by this refactor. */
+  rawPlayer: YTPlayer | null;
   ready: boolean;
   error: boolean;
 }
@@ -79,23 +64,27 @@ export interface UseYouTubePlayerResult {
 /**
  * Loads and owns one YouTube IFrame player. `playerVars` per plan §6: no native controls, no
  * keyboard, no fullscreen — our own ControlBar + click shield are the only way to drive it.
- * `onPlaybackRateChange` forces the rate back to 1× (a client-side nicety; the real guard is server-side).
  */
-export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: UseYouTubePlayerOptions): UseYouTubePlayerResult {
+export function useYouTubePlayer({ youtubeId, title, onPlay, onPause, onEnded, onError }: UseYouTubePlayerOptions): UseYouTubePlayerResult {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Tracks the live instance across this effect invocation. Not a DOM query: the real YT IFrame
+  // Tracks the live adapter across this effect invocation. Not a DOM query: the real YT IFrame
   // API *replaces* the target element with its <iframe> (it doesn't append one inside it), so
   // `containerRef.current.querySelector("iframe")` can never match in a real browser.
-  const instanceRef = useRef<YTPlayer | null>(null);
-  const [player, setPlayer] = useState<YTPlayer | null>(null);
+  const instanceRef = useRef<YouTubePlayerAdapter | null>(null);
+  const [player, setPlayer] = useState<YouTubePlayerAdapter | null>(null);
+  const [rawPlayer, setRawPlayer] = useState<YTPlayer | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
 
   // Latest-callback refs, kept current after every render (never read/written during render itself).
-  const onStateChangeRef = useRef(onStateChange);
+  const onPlayRef = useRef(onPlay);
+  const onPauseRef = useRef(onPause);
+  const onEndedRef = useRef(onEnded);
   const onErrorRef = useRef(onError);
   useEffect(() => {
-    onStateChangeRef.current = onStateChange;
+    onPlayRef.current = onPlay;
+    onPauseRef.current = onPause;
+    onEndedRef.current = onEnded;
     onErrorRef.current = onError;
   });
 
@@ -103,6 +92,7 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
     if (!youtubeId || !containerRef.current) return;
     let cancelled = false;
     let instance: YTPlayer | null = null;
+    let adapter: YouTubePlayerAdapter | null = null;
 
     loadYouTubeIframeApi()
       .then((YT) => {
@@ -127,15 +117,21 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
               if (cancelled) return;
               // The IFrame API doesn't expose the iframe's `title` via playerVars (spec §4.2).
               containerRef.current?.querySelector("iframe")?.setAttribute("title", title);
-              setPlayer(instance);
+              setPlayer(adapter);
+              setRawPlayer(instance);
               setReady(true);
             },
-            onStateChange: (e) => onStateChangeRef.current(e.data),
+            onStateChange: (e) => adapter?.handleStateChange(e.data),
             onError: () => onErrorRef.current(),
-            onPlaybackRateChange: () => instance?.setPlaybackRate(1),
+            onPlaybackRateChange: () => adapter?.handlePlaybackRateChange(),
           },
         });
-        instanceRef.current = instance;
+        adapter = new YouTubePlayerAdapter(instance, {
+          onPlay: (pos) => onPlayRef.current(pos),
+          onPause: (pos) => onPauseRef.current(pos),
+          onEnded: (pos) => onEndedRef.current(pos),
+        });
+        instanceRef.current = adapter;
       })
       .catch(() => {
         if (!cancelled) setError(true);
@@ -143,14 +139,15 @@ export function useYouTubePlayer({ youtubeId, title, onStateChange, onError }: U
 
     return () => {
       cancelled = true;
-      instance?.destroy();
+      adapter?.destroy();
       instanceRef.current = null;
       setPlayer(null);
+      setRawPlayer(null);
       setReady(false);
     };
   }, [youtubeId, title]);
 
-  return { containerRef, player, ready, error };
+  return { containerRef, player, rawPlayer, ready, error };
 }
 
 export const YOUTUBE_PLAYER_TITLE_PREFIX = "วิดีโอ: ";

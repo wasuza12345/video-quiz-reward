@@ -2,8 +2,8 @@
 // ever sees clean, settled events: onPlay(pos) / onPause(pos) / onEnded(pos). Everything that
 // exists because of OUR session/business rules (ENDED recovery, hidden-tab policy, autoResuming)
 // stays in WatchPage, which reacts to these events instead of raw YT state codes.
-import { YT_PLAYER_STATE } from "../hooks/useYouTubePlayer";
-import type { YTPlayer } from "../hooks/useYouTubePlayer";
+import { YT_PLAYER_STATE } from "./youtube-player-types";
+import type { YTPlayer } from "./youtube-player-types";
 
 export interface YouTubePlayerAdapterCallbacks {
   onPlay(positionSec: number): void;
@@ -56,6 +56,13 @@ export class YouTubePlayerAdapter {
 
   currentTime(): number {
     return this.player.getCurrentTime();
+  }
+
+  /** Drops any armed guard without touching the player itself — for a caller resetting its own
+   * session bookkeeping (e.g. an in-app replay reusing this same instance) where a guard armed
+   * for the just-ended session must not carry over and swallow the new session's first play. */
+  resetGuard(): void {
+    this.clearGuard();
   }
 
   /** `resume: false` keeps the player visually paused after the seek (arms the guard, and if the

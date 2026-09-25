@@ -18,7 +18,7 @@ import { initialWatchState, watchReducer, WATCH_ERRORS } from "../state/watch.re
 import { selectCurrentQuestion, selectIsPlaying, selectPlayButtonEnabled, selectStatusLineCopy } from "../state/watch.selectors";
 import { useSessionWriter } from "../hooks/useSessionWriter";
 import { useWatchTracker } from "../hooks/useWatchTracker";
-import { useYouTubePlayer, YT_PLAYER_STATE, youtubePlayerTitle } from "../hooks/useYouTubePlayer";
+import { useYouTubePlayer, youtubePlayerTitle } from "../hooks/useYouTubePlayer";
 import { ErrorState } from "@/frontend/shared/ui/ErrorState";
 import { InlineNotice } from "@/frontend/shared/ui/InlineNotice";
 import { Toast } from "@/frontend/shared/ui/Toast";
@@ -44,11 +44,15 @@ export function WatchPage({ videoId }: WatchPageProps) {
   const writer = useSessionWriter(state.sessionId, state.lastSeq, dispatch);
   const { visible: toast, dismissSticky } = useToast(state.toastRequest);
 
-  const handleStateChangeRef = useRef<(ytState: number) => void>(() => {});
-  const { containerRef, player, ready: playerReady, error: playerError } = useYouTubePlayer({
+  const onPlayRef = useRef<(positionSec: number) => void>(() => {});
+  const onPauseRef = useRef<(positionSec: number) => void>(() => {});
+  const onEndedRef = useRef<(positionSec: number) => void>(() => {});
+  const { containerRef, player, rawPlayer, ready: playerReady, error: playerError } = useYouTubePlayer({
     youtubeId: state.video?.youtubeId ?? "",
     title: youtubePlayerTitle(state.video?.title ?? ""),
-    onStateChange: (s) => handleStateChangeRef.current(s),
+    onPlay: (pos) => onPlayRef.current(pos),
+    onPause: (pos) => onPauseRef.current(pos),
+    onEnded: (pos) => onEndedRef.current(pos),
     onError: () => dispatch({ type: "PLAYER_ERROR" }),
   });
 
@@ -99,7 +103,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
   }, [state.status]);
 
   const trackerApi = useWatchTracker({
-    player,
+    player: rawPlayer,
     active: state.status === "playing",
     sessionId: state.sessionId,
     furthestSec: state.furthestSec,
@@ -114,51 +118,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // actually confirms PLAYING — the ControlBar toggle is disabled for this window so a click
   // can't race the auto-resume's own seek/play and produce a spurious backward jump.
   const [autoResuming, setAutoResuming] = useState(false);
-
-  // Armed by the resume-seek effect below whenever the resumed/reloaded session should stay
-  // paused. YouTube's seekTo() on a freshly-cued player can silently resume playback on its own
-  // — no playVideo() call of ours involved — which let a reloaded session run unattended straight
-  // through the quiz gate (the Play button ends up permanently disabled
-  // because status jumps to "quiz_open" behind the user's back). A ref, not state: it's read only
-  // from the imperative onStateChange/handleToggle callbacks, never rendered.
-  //
-  // One-shot: armed only for the seek it was meant for. If that seek doesn't trigger the quirk
-  // (the common case for an already-buffered, non-cued player — e.g. a TICK-overshoot clamp mid-
-  // session), the guard must not outlive it — otherwise the NEXT legitimate playVideo() (the
-  // quiz auto-resume, or a user's Play click) gets its own PLAYING event swallowed and re-paused,
-  // and — since that swallow returns before setAutoResuming(false) — autoResuming gets stuck
-  // true, permanently disabling the Play/Pause control (the same symptom, a different trigger).
-  // Disarmed by: consuming a spurious PLAYING, the
-  // next settled (non-BUFFERING, non-UNSTARTED) state, a ~5s backstop timeout, or any programmatic
-  // playVideo() we make on purpose (which always clears it first, since a real play should never
-  // be swallowed).
-  //
-  // The backstop is a pure safety net, not the primary disarm path — a real state change always
-  // wins if it arrives first. It has to be generous: real instrumentation on the quirk showed an
-  // asynchronous UNSTARTED -> BUFFERING -> UNSTARTED -> PLAYING sequence, and a slow buffer can
-  // easily outlast a short timer, which would disarm the guard *before* the quirk's own PLAYING
-  // lands — letting it straight through as if it were a real, user-initiated play (this exact
-  // race was observed with the original 1.5s timeout).
-  const suppressAutoplayAfterSeekRef = useRef(false);
-  const suppressAutoplayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const AUTOPLAY_GUARD_BACKSTOP_MS = 5000;
-
-  const armAutoplayGuard = useCallback(() => {
-    suppressAutoplayAfterSeekRef.current = true;
-    if (suppressAutoplayTimeoutRef.current !== null) clearTimeout(suppressAutoplayTimeoutRef.current);
-    suppressAutoplayTimeoutRef.current = setTimeout(() => {
-      suppressAutoplayAfterSeekRef.current = false;
-      suppressAutoplayTimeoutRef.current = null;
-    }, AUTOPLAY_GUARD_BACKSTOP_MS);
-  }, []);
-
-  const clearAutoplayGuard = useCallback(() => {
-    suppressAutoplayAfterSeekRef.current = false;
-    if (suppressAutoplayTimeoutRef.current !== null) {
-      clearTimeout(suppressAutoplayTimeoutRef.current);
-      suppressAutoplayTimeoutRef.current = null;
-    }
-  }, []);
 
   // Backstops autoResuming: set true the instant the quiz auto-resume timer fires (see below), it
   // must come back to false once the player actually confirms PLAYING. If playVideo() never
@@ -188,7 +147,6 @@ export function WatchPage({ videoId }: WatchPageProps) {
   // after the component is gone.
   useEffect(() => {
     return () => {
-      if (suppressAutoplayTimeoutRef.current !== null) clearTimeout(suppressAutoplayTimeoutRef.current);
       if (autoResumingTimeoutRef.current !== null) clearTimeout(autoResumingTimeoutRef.current);
       if (endedRecoveryRetryTimeoutRef.current !== null) clearTimeout(endedRecoveryRetryTimeoutRef.current);
     };
@@ -208,9 +166,9 @@ export function WatchPage({ videoId }: WatchPageProps) {
       clearTimeout(endedRecoveryRetryTimeoutRef.current);
       endedRecoveryRetryTimeoutRef.current = null;
     }
-    clearAutoplayGuard();
+    player?.resetGuard();
     clearAutoResumingBackstop();
-  }, [state.sessionId, clearAutoplayGuard, clearAutoResumingBackstop]);
+  }, [state.sessionId, player, clearAutoResumingBackstop]);
   // autoResuming reset via React's documented "adjust state during render" pattern (not an effect
   // — a synchronous setState in an effect body is a lint error; a ref read during render is too —
   // and this way never even paints the stale value for a frame).
@@ -278,7 +236,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
             () => {
               endedRecoveryRetryTimeoutRef.current = null;
               if (!player) return;
-              attemptEndedRecovery(player.getCurrentTime());
+              attemptEndedRecovery(player.currentTime());
             },
             retryDelaySec * 1000,
           );
@@ -286,93 +244,60 @@ export function WatchPage({ videoId }: WatchPageProps) {
       });
     };
 
-    handleStateChangeRef.current = (ytState: number) => {
-      if (!player) return;
-      const currentTime = player.getCurrentTime();
-      if (ytState === YT_PLAYER_STATE.PLAYING) {
-        if (suppressAutoplayAfterSeekRef.current) {
-          clearAutoplayGuard();
-          player.pauseVideo();
-          return;
-        }
-        // Hidden-tab edge: if the tab was backgrounded after the quiz auto-resume's own
-        // player.playVideo() call but before this
-        // PLAYING confirmation arrived (both real, independently-async postMessage round trips —
-        // nothing orders them), state.status was still "paused"/"quiz_open" the whole time, so
-        // the separate visibilitychange handler's own status==="playing" guard never fired for
-        // it — the real player would otherwise keep playing in the background, unseen and
-        // unreported, until the user comes back. Catch it here instead: never accept a PLAYING
-        // confirmation while hidden.
-        if (document.visibilityState === "hidden") {
-          dispatch({ type: "TAB_HIDDEN" });
-          player.pauseVideo();
-          if (!writer.isInFlight()) void writer.sendImmediate("TAB_HIDDEN", currentTime, undefined, { keepalive: true });
-          return;
-        }
-        setAutoResuming(false);
-        clearAutoResumingBackstop();
-        // The PAUSED event's own position is itself stale on real YouTube — the ~0.27s pause-
-        // settle creep only becomes visible here, at the next genuine PLAYING read. Bounded the
-        // same way as the PAUSED call below.
-        trackerApi.noteSettled(currentTime);
-        dispatch({ type: "PLAY_CLICKED" });
-        void writer.sendImmediate("PLAY", currentTime);
-      } else if (ytState === YT_PLAYER_STATE.BUFFERING || ytState === YT_PLAYER_STATE.UNSTARTED) {
-        // Transitional states the seek quirk passes through on its way to the eventual spurious
-        // PLAYING (real instrumentation: UNSTARTED -> BUFFERING -> UNSTARTED -> PLAYING) — must
-        // NOT disarm the guard here, or the quirk's own PLAYING would slip through unswallowed.
-        // Intentionally a no-op; only a settled state (PLAYING/PAUSED/CUED/ENDED) or the backstop
-        // timeout above disarms an armed guard.
-      } else if (ytState === YT_PLAYER_STATE.PAUSED || ytState === YT_PLAYER_STATE.CUED) {
-        clearAutoplayGuard();
-        if (ytState === YT_PLAYER_STATE.CUED) return;
-        // Trust the (possibly stale) PAUSED position outright too — see noteSettled's own comment
-        // and the PLAYING branch above for why both call sites matter.
-        trackerApi.noteSettled(currentTime);
-        setAutoResuming(false);
-        clearAutoResumingBackstop();
-        // The gate-hit flow (useWatchTracker) already calls player.pauseVideo() and sends its
-        // own PAUSE — skip the duplicate this onStateChange(PAUSED) would otherwise send.
-        if (trackerApi.isGateInFlight()) return;
-        dispatch({ type: "PAUSE_CLICKED" });
-        void writer.sendImmediate("PAUSE", currentTime);
-      } else if (ytState === YT_PLAYER_STATE.ENDED) {
-        clearAutoplayGuard();
-        clearAutoResumingBackstop();
-        attemptEndedRecovery(currentTime);
+    // The adapter has already filtered out every YouTube quirk (spurious/swallowed PLAYING,
+    // BUFFERING/UNSTARTED/CUED) by the time these fire — currentTime is always a real, settled
+    // position for a genuine play/pause/end.
+    onPlayRef.current = (currentTime: number) => {
+      // Hidden-tab edge: if the tab was backgrounded after the quiz auto-resume's own play() call
+      // but before this PLAYING confirmation arrived (both real, independently-async postMessage
+      // round trips — nothing orders them), state.status was still "paused"/"quiz_open" the whole
+      // time, so the separate visibilitychange handler's own status==="playing" guard never fired
+      // for it — the real player would otherwise keep playing in the background, unseen and
+      // unreported, until the user comes back. Catch it here instead: never accept a PLAYING
+      // confirmation while hidden.
+      if (document.visibilityState === "hidden") {
+        dispatch({ type: "TAB_HIDDEN" });
+        player?.pause();
+        if (!writer.isInFlight()) void writer.sendImmediate("TAB_HIDDEN", currentTime, undefined, { keepalive: true });
+        return;
       }
+      setAutoResuming(false);
+      clearAutoResumingBackstop();
+      // The PAUSED event's own position is itself stale on real YouTube — the ~0.27s pause-
+      // settle creep only becomes visible here, at the next genuine PLAYING read. Bounded the
+      // same way as the PAUSED call below.
+      trackerApi.noteSettled(currentTime);
+      dispatch({ type: "PLAY_CLICKED" });
+      void writer.sendImmediate("PLAY", currentTime);
+    };
+
+    onPauseRef.current = (currentTime: number) => {
+      // Trust the (possibly stale) PAUSED position outright too — see noteSettled's own comment
+      // and the PLAYING branch above for why both call sites matter.
+      trackerApi.noteSettled(currentTime);
+      setAutoResuming(false);
+      clearAutoResumingBackstop();
+      // The gate-hit flow (useWatchTracker) already calls player.pause() and sends its
+      // own PAUSE — skip the duplicate this would otherwise send.
+      if (trackerApi.isGateInFlight()) return;
+      dispatch({ type: "PAUSE_CLICKED" });
+      void writer.sendImmediate("PAUSE", currentTime);
+    };
+
+    onEndedRef.current = (currentTime: number) => {
+      clearAutoResumingBackstop();
+      attemptEndedRecovery(currentTime);
     };
   });
 
-  // --- apply a reducer-requested seek, then resume playback if we're meant to be playing (and
-  // aren't already — avoids a redundant playVideo() call while one is already in progress);
-  // otherwise arm the guard above, since seekTo() alone can make the player start playing on its
-  // own ---
+  // --- apply a reducer-requested seek, then resume playback if we're meant to be playing —
+  // otherwise stay paused. The adapter owns the ENDED-unstick quirk (seekTo() alone is a no-op
+  // once ENDED) and the autoplay-after-seek guard for the "stay paused" case. ---
   useEffect(() => {
     if (state.pendingSeekTo === null || !player) return;
-    if (state.status === "playing") {
-      player.seekTo(state.pendingSeekTo, true);
-      if (player.getPlayerState() !== YT_PLAYER_STATE.PLAYING) {
-        clearAutoplayGuard();
-        player.playVideo();
-      }
-    } else {
-      // Confirmed against real Chrome: seekTo() alone is a silent no-op once the player has
-      // reached ENDED (whether the video just ended, or a fresh page load starts at the old end
-      // position, the same underlying YouTube quirk) — getCurrentTime()
-      // never moves, even seconds later. playVideo(), called in the SAME synchronous pass right
-      // after it, is what unsticks it. The ENDED check must happen BEFORE seekTo() — reading
-      // getPlayerState() right AFTER it is itself unreliable (also confirmed against real
-      // Chrome). Only done when actually ENDED: an unconditional playVideo() here would also
-      // nudge a normal (non-ended) paused/quiz_open resume, which doesn't need it and previously
-      // never did one.
-      const wasEnded = player.getPlayerState() === YT_PLAYER_STATE.ENDED;
-      armAutoplayGuard();
-      player.seekTo(state.pendingSeekTo, true);
-      if (wasEnded) player.playVideo();
-    }
+    player.seekTo(state.pendingSeekTo, { resume: state.status === "playing" });
     dispatch({ type: "SEEK_CONSUMED" });
-  }, [state.pendingSeekTo, state.status, player, armAutoplayGuard, clearAutoplayGuard]);
+  }, [state.pendingSeekTo, state.status, player]);
 
   // --- auto-resume 900ms after a correct answer (row 13) ---
   useEffect(() => {
@@ -387,13 +312,13 @@ export function WatchPage({ videoId }: WatchPageProps) {
       if (hidden) return;
       setAutoResuming(true);
       armAutoResumingBackstop();
-      // A stale guard from an earlier non-autoplaying seek (e.g. a TICK-overshoot clamp while the
-      // quiz was open) must not swallow THIS intentional play — clear it first.
-      clearAutoplayGuard();
-      player?.playVideo();
+      // player.play() clears any stale guard from an earlier non-autoplaying seek (e.g. a
+      // TICK-overshoot clamp while the quiz was open) on its own — a real intentional play must
+      // never be swallowed.
+      player?.play();
     }, 900);
     return () => clearTimeout(t);
-  }, [state.status, state.feedback, player, clearAutoplayGuard, armAutoResumingBackstop]);
+  }, [state.status, state.feedback, player, armAutoResumingBackstop]);
 
   // --- auto-claim once ended (rows 5, 18) ---
   useEffect(() => {
@@ -435,9 +360,9 @@ export function WatchPage({ videoId }: WatchPageProps) {
       // (one observed case: 30s with zero TICKs after an honest answer). Nothing meaningful to
       // pause here anyway while not "playing".
       if (document.visibilityState !== "hidden" || !player || state.status !== "playing") return;
-      const currentTime = player.getCurrentTime();
+      const currentTime = player.currentTime();
       dispatch({ type: "TAB_HIDDEN" });
-      player.pauseVideo();
+      player.pause();
       if (!writer.isInFlight()) void writer.sendImmediate("TAB_HIDDEN", currentTime, undefined, { keepalive: true });
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -446,13 +371,11 @@ export function WatchPage({ videoId }: WatchPageProps) {
 
   const handleToggle = useCallback(() => {
     if (!player || !selectPlayButtonEnabled(state) || autoResuming) return;
-    if (state.status === "playing") player.pauseVideo();
-    else {
-      // A real user gesture always wins over the seek-guard above, in case it's still armed.
-      clearAutoplayGuard();
-      player.playVideo();
-    }
-  }, [player, state, autoResuming, clearAutoplayGuard]);
+    // A real user gesture always wins over the seek guard, in case it's still armed — player.play()
+    // clears it on its own.
+    if (state.status === "playing") player.pause();
+    else player.play();
+  }, [player, state, autoResuming]);
 
   const handleChoice = useCallback(
     (choice: string) => {
@@ -540,7 +463,7 @@ export function WatchPage({ videoId }: WatchPageProps) {
         {!isLoading && state.video && (
           <>
             <LiveControlBar
-              player={player}
+              player={rawPlayer}
               active={state.status === "playing"}
               fallbackPositionSec={state.positionSec}
               fallbackFurthestSec={state.furthestSec}
