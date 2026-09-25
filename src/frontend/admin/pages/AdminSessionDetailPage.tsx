@@ -35,7 +35,7 @@ export function buildFlagReason(events: AdminSessionEventRow[]): string {
   return `ถูกปฏิเสธสะสม ${softRejects.length} ครั้ง (${breakdown})`;
 }
 
-function Fact({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "success" | "warning" | "danger" }) {
+export function Fact({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "success" | "warning" | "danger" }) {
   const color = tone === "success" ? "var(--success)" : tone === "warning" ? "var(--warning)" : tone === "danger" ? "var(--danger)" : "var(--text)";
   return (
     <div>
