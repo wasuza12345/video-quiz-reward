@@ -37,14 +37,21 @@ describe("findFlagTriggerEventId (spec §5.7: first SEEK_FORWARD, or the 3rd sof
     expect(findFlagTriggerEventId(events)).toBeNull();
   });
 
-  it("triggers on exactly the 3rd soft reject (SPEED_EXCEEDED)", () => {
+  it("triggers on exactly the 3rd SPEED_EXCEEDED, never counting NOT_WATCHED even interspersed heavily", () => {
+    // shared/constants/session.ts's SOFT_REJECT_REASONS deliberately excludes NOT_WATCHED (an
+    // honest client-side ENDED-recovery retry can fire it many times for one real session) — the
+    // 4 NOT_WATCHED events here must never advance the soft-reject count.
     const events = [
-      event({ id: 1, accepted: false, rejectReason: "SPEED_EXCEEDED" }),
+      event({ id: 1, accepted: false, rejectReason: "NOT_WATCHED" }),
       event({ id: 2, accepted: false, rejectReason: "SPEED_EXCEEDED" }),
-      event({ id: 3, accepted: false, rejectReason: "SPEED_EXCEEDED" }),
-      event({ id: 4, accepted: false, rejectReason: "SPEED_EXCEEDED" }), // already flagged by #3, not the trigger
+      event({ id: 3, accepted: false, rejectReason: "NOT_WATCHED" }),
+      event({ id: 4, accepted: false, rejectReason: "SPEED_EXCEEDED" }),
+      event({ id: 5, accepted: false, rejectReason: "NOT_WATCHED" }),
+      event({ id: 6, accepted: false, rejectReason: "SPEED_EXCEEDED" }),
+      event({ id: 7, accepted: false, rejectReason: "NOT_WATCHED" }),
+      event({ id: 8, accepted: false, rejectReason: "SPEED_EXCEEDED" }), // already flagged by #6, not the trigger
     ];
-    expect(findFlagTriggerEventId(events)).toBe(3);
+    expect(findFlagTriggerEventId(events)).toBe(6);
   });
 
   it("NOT_WATCHED never counts toward the soft-reject flag, no matter how many in a row (planner review round 4, BLOCKER #3: an honest client-side bug used to re-send it ~110 times)", () => {

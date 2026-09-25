@@ -89,7 +89,7 @@ export function Table<T>({ columns, rows, rowKey, rowHref, rowTone, emptyTitle, 
         </tbody>
       </table>
 
-      <div className="admin-table-mobile" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="admin-table-mobile" style={{ flexDirection: "column", gap: 12 }}>
         {rows.map((row) => {
           const href = rowHref?.(row);
           const tone = rowTone?.(row);

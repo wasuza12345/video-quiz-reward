@@ -8,14 +8,13 @@ import { RejectChip } from "./RejectChip";
 import { formatTime, sessions as copy } from "../constants/copy.th";
 import { formatMmSsTenths } from "../lib/time";
 import type { AdminSessionEventRow } from "@/shared/contracts/admin";
+import { SOFT_REJECT_REASONS, TOLERANCES } from "@/shared/constants/session";
 
 // FLAG_WORTHY is visual only (which individual reject reasons get the red chip/border) — kept
 // wider than SOFT_REJECT_REASONS deliberately: NOT_WATCHED is still worth an admin's attention
 // per-event even though it no longer contributes to the session-level `flagged` threshold below
 // (planner review round 4, BLOCKER #3 — see shared/constants/session.ts's own SOFT_REJECT_REASONS).
 const FLAG_WORTHY = new Set(["SEEK_FORWARD", "SPEED_EXCEEDED", "NOT_WATCHED"]);
-const SOFT_REJECT_REASONS = new Set(["SPEED_EXCEEDED"]);
-const SOFT_REJECT_FLAG_AT = 3;
 
 export type TimelineRow = { kind: "event"; event: AdminSessionEventRow } | { kind: "tick-group"; id: string; events: AdminSessionEventRow[] };
 
@@ -23,17 +22,18 @@ function sortedEvents(events: AdminSessionEventRow[]): AdminSessionEventRow[] {
   return [...events].sort((a, b) => a.serverAt.localeCompare(b.serverAt) || a.id - b.id);
 }
 
-/** The event that flipped `flagged` to true: the first SEEK_FORWARD, or the 3rd soft reject
- * (SPEED_EXCEEDED only) — mirrors backend/domain/session-state-machine.ts's `reject()`.
+/** The event that flipped `flagged` to true: the first SEEK_FORWARD, or the Nth soft reject
+ * (shared/constants/session.ts's SOFT_REJECT_REASONS — NOT_WATCHED deliberately excluded) —
+ * mirrors backend/domain/session-state-machine.ts's `reject()`.
  * Exported for tests/unit/frontend/session-timeline.test.ts. */
 export function findFlagTriggerEventId(events: AdminSessionEventRow[]): number | null {
   let softCount = 0;
   for (const e of sortedEvents(events)) {
     if (e.accepted || !e.rejectReason) continue;
     if (e.rejectReason === "SEEK_FORWARD") return e.id;
-    if (SOFT_REJECT_REASONS.has(e.rejectReason)) {
+    if (SOFT_REJECT_REASONS.some((reason) => reason === e.rejectReason)) {
       softCount += 1;
-      if (softCount >= SOFT_REJECT_FLAG_AT) return e.id;
+      if (softCount >= TOLERANCES.SOFT_REJECT_FLAG_AT) return e.id;
     }
   }
   return null;
@@ -241,7 +241,7 @@ export function SessionTimeline({ events, startedAt }: { events: AdminSessionEve
         </tbody>
       </table>
 
-      <ul className="admin-table-mobile" style={{ display: "flex", flexDirection: "column", gap: 8, listStyle: "none", margin: 0, padding: 0 }}>
+      <ul className="admin-table-mobile" style={{ flexDirection: "column", gap: 8, listStyle: "none", margin: 0, padding: 0 }}>
         {rows.map((row) => {
           if (row.kind === "event") {
             const e = row.event;

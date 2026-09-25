@@ -205,4 +205,27 @@ async function runAdminCrudFlow(page: import("@playwright/test").Page, videoTitl
     await expect(page.getByRole("button", { name: "ลบคำถาม" })).toBeDisabled();
     await expect(page.getByLabel("ลิงก์ YouTube")).toHaveAttribute("readonly", "");
   });
+
+  // Planner review: Table.tsx and SessionTimeline.tsx's own mobile <div>/<ul> both carried an
+  // inline style={{ display: "flex" }} — inline styles always beat a class-based media query, so
+  // ≥601px showed the desktop <table> AND the mobile card list at once (fixed: dropped the inline
+  // display, left it to .admin-table-mobile's CSS). Checks both components, both breakpoints —
+  // this project's default 1280px viewport, then resized to 390px (restored after).
+  await test.step("desktop shows only the table, 390px shows only the mobile cards (Table.tsx + SessionTimeline.tsx)", async () => {
+    await page.goto("/admin/videos");
+    await expect(page.locator(".admin-table-desktop").first(), "1280px: the table must be visible").toBeVisible();
+    await expect(page.locator(".admin-table-mobile").first(), "1280px: the mobile card list must be hidden").toBeHidden();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator(".admin-table-desktop").first(), "390px: the table must be hidden").toBeHidden();
+    await expect(page.locator(".admin-table-mobile").first(), "390px: the mobile card list must be visible").toBeVisible();
+
+    await page.goto(`/admin/sessions/${flaggedSessionId}`);
+    await expect(page.locator(".admin-table-desktop").first(), "390px, SessionTimeline: the table must be hidden").toBeHidden();
+    await expect(page.locator(".admin-table-mobile").first(), "390px, SessionTimeline: the mobile list must be visible").toBeVisible();
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator(".admin-table-desktop").first(), "1280px, SessionTimeline: the table must be visible").toBeVisible();
+    await expect(page.locator(".admin-table-mobile").first(), "1280px, SessionTimeline: the mobile list must be hidden").toBeHidden();
+  });
 }
